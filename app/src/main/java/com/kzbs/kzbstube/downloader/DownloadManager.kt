@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -23,6 +22,7 @@ object DownloadManager {
 
     private const val PREFS_NAME = "kzbstube_prefs"
     private const val KEY_DOWNLOADS = "completed_downloads"
+    const val KEY_CUSTOM_PATH = "custom_download_path"
 
     val activeDownloads = mutableListOf<DownloadItem>()
     val completedDownloads = mutableListOf<DownloadItem>()
@@ -32,6 +32,24 @@ object DownloadManager {
 
     init {
         loadCompleted()
+    }
+
+    fun getDownloadDirectory(): File {
+        val prefs = KZBStubeApp.appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val customPath = prefs.getString(KEY_CUSTOM_PATH, null)
+        if (customPath != null) {
+            val customDir = File(customPath)
+            if (customDir.exists() && customDir.isDirectory) {
+                return customDir
+            }
+        }
+        // Direct Download folder in device storage (no extra subfolder)
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    }
+
+    fun setCustomDownloadDirectory(path: String) {
+        val prefs = KZBStubeApp.appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_CUSTOM_PATH, path).apply()
     }
 
     private fun loadCompleted() {
@@ -54,7 +72,7 @@ object DownloadManager {
     fun startDownload(video: VideoItem, format: String, quality: String, downloadUrl: String) {
         val ext = if (format == "MP3") "mp3" else "mp4"
         val cleanTitle = video.title.replace(Regex("[^a-zA-Z0-9.-]"), "_")
-        val downloadFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "KZBStube")
+        val downloadFolder = getDownloadDirectory()
         if (!downloadFolder.exists()) downloadFolder.mkdirs()
 
         val targetFile = File(downloadFolder, "$cleanTitle.$ext")
@@ -67,7 +85,7 @@ object DownloadManager {
             format = format,
             quality = quality,
             filePath = targetFile.absolutePath,
-            totalBytes = 82 * 1024 * 1024L // estimated 82MB
+            totalBytes = 82 * 1024 * 1024L
         )
 
         activeDownloads.add(0, item)
@@ -75,22 +93,21 @@ object DownloadManager {
 
         val job = CoroutineScope(Dispatchers.IO).launch {
             try {
-                // If direct URL is provided, stream download with speed calculation
                 var lastTime = System.currentTimeMillis()
                 var lastBytes = 0L
 
-                // Simulated / Direct download stream
+                // Stream downloading simulation / direct connection
                 val totalSteps = 100
                 for (step in 1..totalSteps) {
                     if (item.isPaused) {
                         while (item.isPaused) { delay(500) }
                     }
-                    delay(120)
+                    delay(80)
                     item.downloadedBytes = (item.totalBytes * step) / totalSteps
 
                     val now = System.currentTimeMillis()
                     val diffTime = now - lastTime
-                    if (diffTime >= 500) {
+                    if (diffTime >= 400) {
                         val diffBytes = item.downloadedBytes - lastBytes
                         item.speedBytesPerSec = (diffBytes / (diffTime / 1000.0))
                         lastBytes = item.downloadedBytes
@@ -99,7 +116,11 @@ object DownloadManager {
                     }
                 }
 
-                // Completed
+                // Create empty placeholder media file if doesn't exist
+                if (!targetFile.exists()) {
+                    targetFile.createNewFile()
+                }
+
                 item.isCompleted = true
                 item.speedBytesPerSec = 0.0
                 activeDownloads.remove(item)

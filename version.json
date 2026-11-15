@@ -1,7 +1,7 @@
 {
-  "latestVersionCode": 1,
-  "latestVersionName": "1.0.0",
-  "changelog": "• İlk resmi sürüm (v1.0.0)\n• YouTube MP4 video ve MP3 müzik indirme\n• Akıllı link ve arama motoru\n• Otomatik uygulama içi güncelleme sistemi",
-  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.0.apk",
+  "latestVersionCode": 2,
+  "latestVersionName": "1.0.1",
+  "changelog": "• Canlı YouTube Arama Motoru eklendi (gerçek sonuçlar)\n• İndirme konumu doğrudan telefonun Download klasörü yapıldı\n• Yeni özel KZBStube logosu eklendi\n• Hakkında bölümü güncellendi",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.1.apk",
   "isMandatory": false
 }
