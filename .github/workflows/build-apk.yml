@@ -2,6 +2,8 @@ name: Build and Release KZBStube APK
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -22,6 +24,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -47,24 +51,34 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "TAG_NAME=${{ github.event.inputs.version_name }}" >> $GITHUB_ENV
-          else
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "TAG_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "TAG_NAME=v1.0.0" >> $GITHUB_ENV
           fi
 
-      - name: Rename APK
+      - name: Copy APK to apk folder
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/KZBStube-${{ env.TAG_NAME }}.apk
-          cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/KZBStube.apk
+          mkdir -p apk
+          cp build/app/outputs/flutter-apk/app-release.apk apk/KZBStube.apk
+          cp build/app/outputs/flutter-apk/app-release.apk apk/KZBStube-${{ env.TAG_NAME }}.apk
+
+      - name: Commit APK to Repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f apk/KZBStube.apk apk/KZBStube-${{ env.TAG_NAME }}.apk
+          git commit -m "build: update KZBStube APK in apk/ folder [skip ci]" || echo "No changes to commit"
+          git push origin main || true
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: KZBStube-APK
-          path: build/app/outputs/flutter-apk/KZBStube.apk
+          path: apk/KZBStube.apk
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: "KZBStube ${{ env.TAG_NAME }}"
@@ -73,6 +87,9 @@ jobs:
             
             KZBStube YouTube Video ve Müzik İndirici'nin en güncel sürümüdür.
             
+            ### 📥 İndirme:
+            - **Doğrudan APK İndir:** [`KZBStube.apk`](https://github.com/kzbs4652/KZBStube/raw/main/apk/KZBStube.apk)
+            
             ### ✨ Yenilikler:
             - İlk resmi yazılım sürümü (v1.0.0).
             - YouTube video (MP4) ve müzik (MP3) yüksek hızlı indirme desteği.
@@ -80,11 +97,8 @@ jobs:
             - Otomatik pano (clipboard) algılama.
             - Koyu kırmızı premium arayüz teması.
             - Uygulama içi otomatik güncelleme mekanizması.
-            
-            ### 📲 Kurulum:
-            Aşağıdaki `KZBStube.apk` dosyasını Android telefonunuza indirip kurabilirsiniz.
           files: |
-            build/app/outputs/flutter-apk/KZBStube.apk
-            build/app/outputs/flutter-apk/KZBStube-${{ env.TAG_NAME }}.apk
+            apk/KZBStube.apk
+            apk/KZBStube-${{ env.TAG_NAME }}.apk
           draft: false
           prerelease: false

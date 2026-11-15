@@ -6,6 +6,16 @@ KZBStube, YouTube üzerinden video (MP4) ve müzik (MP3) dosyalarını en yükse
 
 ---
 
+## 📲 APK İndirme (Kolay Kurulum)
+
+Uygulamanın hazır kurulum APK'sı doğrudan **`apk/`** klasöründe yer almaktadır:
+
+👉 **[📥 KZBStube.apk İndir](https://github.com/kzbs4652/KZBStube/raw/main/apk/KZBStube.apk)** *(Doğrudan indirme)*  
+👉 **[📁 APK Klasörünü Görüntüle](https://github.com/kzbs4652/KZBStube/tree/main/apk)**  
+👉 **[🚀 GitHub Releases Sayfası](https://github.com/kzbs4652/KZBStube/releases)**  
+
+---
+
 ## ✨ Özellikler
 
 - **Modern & Karanlık Tasarım:** Kırmızı ve siyah tonlarında, akıcı ve şık arayüz.
@@ -34,14 +44,6 @@ KZBStube, YouTube üzerinden video (MP4) ve müzik (MP3) dosyalarını en yükse
 ## 🚀 Yazılım Güncelleme Sistemi (Nasıl Çalışır?)
 
 1. Yeni bir özellik veya düzeltme yapıldığında GitHub'a yeni bir sürüm etiketi (Örn: `v1.0.1` veya `v1.1.0`) gönderilir.
-2. GitHub Actions bulutta otomatik olarak `KZBStube.apk` dosyasını derler ve Releases alanına yükler.
+2. GitHub Actions bulutta otomatik olarak `KZBStube.apk` dosyasını derler, `apk/` klasörüne ve Releases alanına yükler.
 3. Uygulama açılışta ve **Ayarlar -> Güncellemeleri Denetle** alanından en son sürümü kontrol eder.
 4. Yeni bir sürüm tespit edildiğinde kullanıcıya güncelleme bildirimi sunulur ve uygulama içinden kurulur.
-
----
-
-## 🛠️ Kurulum ve Derleme (GitHub Actions)
-
-Proje **GitHub Actions** ile entegre edilmiştir. Bilgisayara Android SDK veya Flutter kurmaya gerek kalmadan doğrudan bulutta derlenir:
-1. `git push origin main` veya yeni bir etiket (`git tag v1.0.0 && git push origin v1.0.0`) atıldığında derleme başlar.
-2. GitHub Actions çalışması tamamlandığında **Releases** sekmesinde `KZBStube.apk` hazır olarak sunulur.
