@@ -65,7 +65,7 @@
             android:layout_width="match_parent"
             android:layout_height="10dp"
             android:layout_marginTop="16dp"
-            android:progress="58"
+            android:progress="0"
             android:progressTint="@color/kzbs_red" />
 
         <LinearLayout
@@ -79,7 +79,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="47,6 MB / 82 MB • 6,4 MB/s"
+                android:text="Bağlanıyor..."
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
 
@@ -87,7 +87,7 @@
                 android:id="@+id/tvActivePercent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="%58"
+                android:text="%0"
                 android:textColor="@color/text_primary"
                 android:textSize="13sp"
                 android:textStyle="bold" />

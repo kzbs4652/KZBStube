@@ -21,6 +21,9 @@ class ActiveDownloadsActivity : AppCompatActivity() {
 
         binding.tvActiveTitle.text = title
         binding.tvActiveFormat.text = format
+        binding.pbActive.progress = 0
+        binding.tvActivePercent.text = "%0"
+        binding.tvActiveMetrics.text = "İndirme başlatılıyor..."
 
         DownloadManager.onProgressUpdate = {
             runOnUiThread {

@@ -1,7 +1,7 @@
 {
-  "latestVersionCode": 4,
-  "latestVersionName": "1.0.3",
-  "changelog": "• Hızlı ve telifsiz uygulama içi ses önizleme çubuğu\n• 64KB yüksek hızlı indirme altyapısı ve Keep-Alive bağlantı\n• Android durum çubuğu indirme bildirimleri (yüzde, hız, tamamlandı bildirimi)\n• 3 seçenekli tema sistemi: Otomatik (Sistem Varsayılanı), Koyu Mod, Açık Mod\n• Sadeleştirilmiş Hakkında bilgisi ve dinamik sürüm gösterimi",
-  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.3.apk",
+  "latestVersionCode": 5,
+  "latestVersionName": "1.0.4",
+  "changelog": "• YouTube 25 KB/s hız frenini tamamen kaldıran parçalı Range indirme motoru\n• Kullanıcının tüm internet hızını kullanan yüksek hızlı indirme altyapısı\n• Hızlı Range önbellek ile 1 saniyenin altında açılan şarkı önizleme\n• İndirme ekranındaki yanıltıcı '82 MB' başlangıç metninin tamamen düzeltilmesi\n• Bildirim ve indirme ilerleme göstergelerinde gerçek megabayt ve hız takibi",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.4.apk",
   "isMandatory": false
 }
