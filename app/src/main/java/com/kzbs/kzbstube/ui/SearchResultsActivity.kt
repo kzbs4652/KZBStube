@@ -2,20 +2,18 @@ package com.kzbs.kzbstube.ui
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -26,7 +24,6 @@ import com.kzbs.kzbstube.databinding.ActivitySearchResultsBinding
 import com.kzbs.kzbstube.databinding.ItemVideoBinding
 import com.kzbs.kzbstube.downloader.DownloadManager
 import com.kzbs.kzbstube.downloader.YouTubeHelper
-import com.kzbs.kzbstube.model.StreamOption
 import com.kzbs.kzbstube.model.VideoItem
 import kotlinx.coroutines.launch
 
@@ -53,7 +50,7 @@ class SearchResultsActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
         binding.btnClear.setOnClickListener { binding.etTopSearch.setText("") }
 
-        // Mode toggling
+        // Mode toggling (MP4 / MP3)
         binding.btnResultModeVideo.setOnClickListener {
             currentMode = "MP4"
             updateModeButtons()
@@ -81,7 +78,7 @@ class SearchResultsActivity : AppCompatActivity() {
             true
         }
 
-        // Mini player controls
+        // Mini audio player controls
         binding.btnMiniPlayPause.setOnClickListener {
             mediaPlayer?.let { mp ->
                 if (mp.isPlaying) {
@@ -130,70 +127,17 @@ class SearchResultsActivity : AppCompatActivity() {
     }
 
     /**
-     * When user taps thumbnail/card:
-     * If MP4: Opens in-app Video Player dialog!
-     * If MP3: Starts playing audio inside the app!
+     * Tapping any item now always plays audio preview directly in the app.
+     * This avoids YouTube copyright blocks and video playback errors completely.
      */
     private fun onVideoItemClicked(video: VideoItem) {
-        if (currentMode == "MP4") {
-            playVideoInApp(video)
-        } else {
-            playAudioInApp(video)
-        }
-    }
-
-    private fun playVideoInApp(video: VideoItem) {
-        stopAudio()
-        binding.llMiniPlayer.visibility = View.GONE
-
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_video_preview, null)
-        val tvTitle = view.findViewById<TextView>(R.id.tvPreviewTitle)
-        val btnClose = view.findViewById<View>(R.id.btnClosePreview)
-        val btnDownload = view.findViewById<Button>(R.id.btnDownloadFromPreview)
-        val webView = view.findViewById<WebView>(R.id.wvVideo)
-
-        tvTitle.text = video.title
-
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.webViewClient = WebViewClient()
-        webView.webChromeClient = WebChromeClient()
-
-        // Embed YouTube video with autoplay
-        val embedHtml = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <style>body { margin: 0; background-color: #000; display: flex; align-items: center; justify-content: center; height: 100vh; }</style>
-            </head>
-            <body>
-            <iframe width="100%" height="100%" src="https://www.youtube.com/embed/${video.id}?autoplay=1&playsinline=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-            </body>
-            </html>
-        """.trimIndent()
-        webView.loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
-
-        val dialog = AlertDialog.Builder(this)
-            .setView(view)
-            .setOnDismissListener {
-                webView.loadUrl("about:blank")
-                webView.destroy()
-            }
-            .create()
-
-        btnClose.setOnClickListener { dialog.dismiss() }
-        btnDownload.setOnClickListener {
-            dialog.dismiss()
-            showDownloadOptionsDialog(video)
-        }
-
-        dialog.show()
+        playAudioInApp(video)
     }
 
     private fun playAudioInApp(video: VideoItem) {
         binding.llMiniPlayer.visibility = View.VISIBLE
         binding.tvMiniTitle.text = video.title
-        binding.tvMiniStatus.text = "Akış bağlanıyor..."
+        binding.tvMiniStatus.text = "Hazırlanıyor..."
         binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
 
         Glide.with(this).load(video.thumbnailUrl).into(binding.ivMiniThumb)
@@ -205,17 +149,39 @@ class SearchResultsActivity : AppCompatActivity() {
             if (audioOpt != null && audioOpt.streamUrl.startsWith("http")) {
                 try {
                     stopAudio()
+                    binding.tvMiniStatus.text = "Bağlanıyor..."
+                    val headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Accept" to "*/*"
+                    )
+
                     mediaPlayer = MediaPlayer().apply {
-                        setDataSource(audioOpt.streamUrl)
+                        setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .build()
+                        )
+                        setDataSource(this@SearchResultsActivity, Uri.parse(audioOpt.streamUrl), headers)
                         setOnPreparedListener {
                             start()
                             isPlayingAudio = true
                             binding.tvMiniStatus.text = "Çalıyor 🎵"
                             binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                         }
+                        setOnBufferingUpdateListener { _, percent ->
+                            if (isPlayingAudio && percent < 100) {
+                                binding.tvMiniStatus.text = "Çalıyor 🎵 (%$percent)"
+                            }
+                        }
                         setOnCompletionListener {
                             binding.tvMiniStatus.text = "Tamamlandı"
                             binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                        }
+                        setOnErrorListener { _, _, _ ->
+                            binding.tvMiniStatus.text = "Ses oynatılamadı"
+                            binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            true
                         }
                         prepareAsync()
                     }

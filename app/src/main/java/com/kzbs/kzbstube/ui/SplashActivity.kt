@@ -8,6 +8,7 @@ import android.view.animation.AlphaAnimation
 import android.view.animation.AnimationSet
 import android.view.animation.ScaleAnimation
 import androidx.appcompat.app.AppCompatActivity
+import com.kzbs.kzbstube.BuildConfig
 import com.kzbs.kzbstube.databinding.ActivitySplashBinding
 
 class SplashActivity : AppCompatActivity() {
@@ -18,6 +19,8 @@ class SplashActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySplashBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        binding.tvVersion.text = "v${BuildConfig.VERSION_NAME}"
 
         // Opening animation matching user request
         val animSet = AnimationSet(true)

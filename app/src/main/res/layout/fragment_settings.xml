@@ -42,10 +42,11 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/tvFolderSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="Dahili Depolama / KZBStube"
+                    android:text="Dahili Depolama / Download"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -123,7 +124,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="İndirme durumu bildirimi"
+                        android:text="İndirme durumu ve tamamlama bildirimleri"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -140,10 +141,12 @@
                 android:layout_height="1dp"
                 android:background="@color/kzbs_divider" />
 
-            <!-- Koyu Tema Switch -->
+            <!-- Uygulama Teması (3 seçenekli: Otomatik, Koyu, Açık) -->
             <LinearLayout
+                android:id="@+id/llTheme"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="?selectableItemBackground"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingVertical="14dp">
@@ -157,25 +160,29 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Koyu Tema"
+                        android:text="Uygulama Teması"
                         android:textColor="@color/text_primary"
                         android:textSize="14sp"
                         android:textStyle="bold" />
 
                     <TextView
+                        android:id="@+id/tvThemeSubtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Uygulama temasını dark yap"
+                        android:text="Otomatik (Sistem Varsayılanı)"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/swDarkMode"
+                <TextView
+                    android:id="@+id/tvThemeAction"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:checked="true" />
+                    android:text="Seç"
+                    android:textColor="@color/kzbs_red"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <View
@@ -232,10 +239,11 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/tvAboutSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="KZBStube v1.0.0"
+                    android:text="KZBStube"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
             </LinearLayout>

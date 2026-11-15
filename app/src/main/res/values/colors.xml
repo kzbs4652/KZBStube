@@ -3,15 +3,15 @@
     <color name="kzbs_red">#E50914</color>
     <color name="kzbs_red_bright">#FF1E27</color>
     <color name="kzbs_red_dark">#88000C</color>
-    <color name="kzbs_bg">#0D0D0E</color>
-    <color name="kzbs_surface">#16171B</color>
-    <color name="kzbs_card">#1E2026</color>
-    <color name="kzbs_card_selected">#282B33</color>
-    <color name="kzbs_border">#2A2D35</color>
-    <color name="kzbs_divider">#23252C</color>
-    <color name="kzbs_nav_bg">#121316</color>
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#9E9EA7</color>
-    <color name="text_muted">#6B6E78</color>
+    <color name="kzbs_bg">#F6F7F9</color>
+    <color name="kzbs_surface">#FFFFFF</color>
+    <color name="kzbs_card">#FFFFFF</color>
+    <color name="kzbs_card_selected">#ECEFF1</color>
+    <color name="kzbs_border">#E2E8F0</color>
+    <color name="kzbs_divider">#E2E8F0</color>
+    <color name="kzbs_nav_bg">#FFFFFF</color>
+    <color name="text_primary">#1A1D20</color>
+    <color name="text_secondary">#64748B</color>
+    <color name="text_muted">#94A3B8</color>
     <color name="kzbs_green">#2ED573</color>
 </resources>

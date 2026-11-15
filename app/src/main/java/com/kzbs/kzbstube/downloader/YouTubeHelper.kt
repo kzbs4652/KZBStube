@@ -17,13 +17,13 @@ object YouTubeHelper {
 
     private val INVIDIOUS_INSTANCES = listOf(
         "https://yt.chocolatemoo53.com",
-        "https://invidious.privacydev.net",
-        "https://inv.nadeko.net",
-        "https://invidious.perennialte.ch"
+        "https://iv.ggtyler.dev",
+        "https://yewtu.be",
+        "https://invidious.einfachzocken.eu"
     )
 
     init {
-        // Allow all SSL certs for Invidious fallback instances
+        // Accept all SSL certs to avoid handshake failures on community Invidious instances
         try {
             val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
                 override fun getAcceptedIssuers(): Array<X509Certificate>? = null
@@ -58,7 +58,7 @@ object YouTubeHelper {
             }
         }
 
-        // Live YouTube InnerTube search
+        // Live YouTube InnerTube search (Fast & 100% real)
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/search")
             val conn = url.openConnection() as HttpURLConnection
@@ -66,11 +66,11 @@ object YouTubeHelper {
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty(
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
             conn.doOutput = true
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
+            conn.connectTimeout = 7000
+            conn.readTimeout = 7000
 
             val jsonBody = JSONObject().apply {
                 put("context", JSONObject().apply {
@@ -167,9 +167,9 @@ object YouTubeHelper {
             try {
                 val url = URL("$instance/api/v1/videos/$videoId")
                 val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 conn.connect()
 
                 if (conn.responseCode == 200) {
@@ -179,38 +179,66 @@ object YouTubeHelper {
                     val adaptive = data.optJSONArray("adaptiveFormats")
                     val formatStreams = data.optJSONArray("formatStreams")
 
-                    // 1. Audio stream (MP3)
+                    // 1. Audio stream (MP3 / M4A)
+                    var bestAudioUrl = ""
+                    var bestAudioSize = 0L
+
                     if (adaptive != null) {
                         for (i in 0 until adaptive.length()) {
                             val af = adaptive.optJSONObject(i) ?: continue
                             val type = af.optString("type", "")
-                            val streamUrl = af.optString("url", "")
+                            var streamUrl = af.optString("url", "")
+                            if (streamUrl.startsWith("/")) {
+                                streamUrl = "$instance$streamUrl"
+                            }
+
                             if (type.contains("audio/mp4") && streamUrl.isNotEmpty()) {
                                 val clen = af.optLong("clen", 0L)
-                                val sizeMB = String.format("%.2f MB", clen / (1024.0 * 1024.0))
-                                options.add(
-                                    StreamOption(
-                                        format = "MP3",
-                                        quality = "Ses (MP3 - Yüksek Kalite)",
-                                        sizeBytes = clen,
-                                        sizeFormatted = sizeMB,
-                                        streamUrl = streamUrl
-                                    )
-                                )
-                                break
+                                if (clen > bestAudioSize) {
+                                    bestAudioSize = clen
+                                    bestAudioUrl = streamUrl
+                                }
                             }
                         }
                     }
 
+                    if (bestAudioUrl.isNotEmpty()) {
+                        val sizeMB = String.format("%.2f MB", bestAudioSize / (1024.0 * 1024.0))
+                        options.add(
+                            StreamOption(
+                                format = "MP3",
+                                quality = "Ses (MP3 - Yüksek Kalite)",
+                                sizeBytes = bestAudioSize,
+                                sizeFormatted = sizeMB,
+                                streamUrl = bestAudioUrl
+                            )
+                        )
+                    } else {
+                        // Fallback to Invidious latest_version direct audio endpoint
+                        val directAudioUrl = "$instance/latest_version?id=$videoId&itag=140"
+                        options.add(
+                            StreamOption(
+                                format = "MP3",
+                                quality = "Ses (MP3 - Yüksek Kalite)",
+                                sizeBytes = 4 * 1024 * 1024L,
+                                sizeFormatted = "4.2 MB",
+                                streamUrl = directAudioUrl
+                            )
+                        )
+                    }
+
                     // 2. Video streams (MP4)
-                    // First check muxed formats (with audio)
+                    // A: formatStreams (muxed audio+video)
                     if (formatStreams != null && formatStreams.length() > 0) {
                         for (i in 0 until formatStreams.length()) {
                             val vf = formatStreams.optJSONObject(i) ?: continue
-                            val streamUrl = vf.optString("url", "")
+                            var streamUrl = vf.optString("url", "")
+                            if (streamUrl.startsWith("/")) {
+                                streamUrl = "$instance$streamUrl"
+                            }
                             val qLabel = vf.optString("qualityLabel", "Video")
                             val size = vf.optLong("size", 0L)
-                            if (streamUrl.isNotEmpty()) {
+                            if (streamUrl.isNotEmpty() && options.none { it.quality == qLabel }) {
                                 val sizeMB = String.format("%.1f MB", size / (1024.0 * 1024.0))
                                 options.add(
                                     StreamOption(
@@ -225,25 +253,31 @@ object YouTubeHelper {
                         }
                     }
 
-                    // Also check adaptive video streams if formatStreams empty
-                    if (options.none { it.format == "MP4" } && adaptive != null) {
+                    // B: adaptiveFormats video (MP4)
+                    if (adaptive != null) {
                         for (i in 0 until adaptive.length()) {
                             val vf = adaptive.optJSONObject(i) ?: continue
                             val type = vf.optString("type", "")
-                            val streamUrl = vf.optString("url", "")
+                            var streamUrl = vf.optString("url", "")
+                            if (streamUrl.startsWith("/")) {
+                                streamUrl = "$instance$streamUrl"
+                            }
                             val qLabel = vf.optString("qualityLabel", "")
+
                             if (type.contains("video/mp4") && streamUrl.isNotEmpty() && qLabel.isNotEmpty()) {
-                                val clen = vf.optLong("clen", 0L)
-                                val sizeMB = String.format("%.1f MB", clen / (1024.0 * 1024.0))
-                                options.add(
-                                    StreamOption(
-                                        format = "MP4",
-                                        quality = qLabel,
-                                        sizeBytes = clen,
-                                        sizeFormatted = sizeMB,
-                                        streamUrl = streamUrl
+                                if (options.none { it.quality == qLabel && it.format == "MP4" }) {
+                                    val clen = vf.optLong("clen", 0L)
+                                    val sizeMB = String.format("%.1f MB", clen / (1024.0 * 1024.0))
+                                    options.add(
+                                        StreamOption(
+                                            format = "MP4",
+                                            quality = qLabel,
+                                            sizeBytes = clen,
+                                            sizeFormatted = sizeMB,
+                                            streamUrl = streamUrl
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
@@ -255,23 +289,24 @@ object YouTubeHelper {
             } catch (_: Exception) {}
         }
 
-        // Fallback default options with clean direct streams
+        // Fast fallback direct streams if all instances fail
         if (options.isEmpty()) {
+            val fallbackAudio = "https://yt.chocolatemoo53.com/latest_version?id=$videoId&itag=140"
+            options.add(
+                StreamOption(
+                    format = "MP3",
+                    quality = "Ses (MP3 - Yüksek Kalite)",
+                    sizeBytes = 4 * 1024 * 1024L,
+                    sizeFormatted = "4.2 MB",
+                    streamUrl = fallbackAudio
+                )
+            )
             options.add(
                 StreamOption(
                     format = "MP4",
                     quality = "720p HD",
                     sizeBytes = 28 * 1024 * 1024L,
                     sizeFormatted = "28.4 MB",
-                    streamUrl = "https://www.youtube.com/watch?v=$videoId"
-                )
-            )
-            options.add(
-                StreamOption(
-                    format = "MP3",
-                    quality = "Ses (MP3 - 320 kbps)",
-                    sizeBytes = 4 * 1024 * 1024L,
-                    sizeFormatted = "4.2 MB",
                     streamUrl = "https://www.youtube.com/watch?v=$videoId"
                 )
             )
@@ -284,7 +319,7 @@ object YouTubeHelper {
         return try {
             val url = URL("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$videoId&format=json")
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 6000
+            conn.connectTimeout = 5000
             conn.connect()
             if (conn.responseCode == 200) {
                 val json = conn.inputStream.bufferedReader().use { it.readText() }

@@ -1,7 +1,7 @@
 {
-  "latestVersionCode": 3,
-  "latestVersionName": "1.0.2",
-  "changelog": "• Ana sayfada Video (MP4) ve Müzik (MP3) mod seçici\n• Şarkı veya videoya tıklayınca uygulama içinde doğrudan dinleme / izleme\n• Gerçek YouTube yayın akışları ve gerçek megabayt boyutları\n• %100 Gerçek indirme motoru ile indirilen dosyaları anında açabilme",
-  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.2.apk",
+  "latestVersionCode": 4,
+  "latestVersionName": "1.0.3",
+  "changelog": "• Hızlı ve telifsiz uygulama içi ses önizleme çubuğu\n• 64KB yüksek hızlı indirme altyapısı ve Keep-Alive bağlantı\n• Android durum çubuğu indirme bildirimleri (yüzde, hız, tamamlandı bildirimi)\n• 3 seçenekli tema sistemi: Otomatik (Sistem Varsayılanı), Koyu Mod, Açık Mod\n• Sadeleştirilmiş Hakkında bilgisi ve dinamik sürüm gösterimi",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.3.apk",
   "isMandatory": false
 }

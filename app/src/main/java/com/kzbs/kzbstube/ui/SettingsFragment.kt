@@ -1,7 +1,5 @@
 package com.kzbs.kzbstube.ui
 
-import android.app.Activity
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -12,10 +10,11 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import com.kzbs.kzbstube.BuildConfig
+import com.kzbs.kzbstube.KZBStubeApp
 import com.kzbs.kzbstube.databinding.FragmentSettingsBinding
 import com.kzbs.kzbstube.downloader.DownloadManager
 import com.kzbs.kzbstube.update.UpdateChecker
-import java.io.File
 
 class SettingsFragment : Fragment() {
 
@@ -27,7 +26,6 @@ class SettingsFragment : Fragment() {
     ) { uri: Uri? ->
         if (uri != null) {
             val path = uri.path ?: ""
-            // Save selected directory
             DownloadManager.setCustomDownloadDirectory(path)
             updateFolderText()
             Toast.makeText(requireContext(), "İndirme klasörü güncellendi.", Toast.LENGTH_SHORT).show()
@@ -47,11 +45,37 @@ class SettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         updateFolderText()
+        updateThemeText()
 
+        // Simultaneous downloads count
         val options = arrayOf("1", "2", "3", "5")
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, options)
         binding.spSimultaneous.adapter = adapter
         binding.spSimultaneous.setSelection(2) // 3
+
+        // Notifications switch
+        binding.swNotifications.isChecked = KZBStubeApp.areNotificationsEnabled()
+        binding.swNotifications.setOnCheckedChangeListener { _, isChecked ->
+            KZBStubeApp.setNotificationsEnabled(isChecked)
+            val msg = if (isChecked) "İndirme bildirimleri açıldı." else "İndirme bildirimleri kapatıldı."
+            Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+        }
+
+        // 3-way Theme Selection (Auto, Dark, Light)
+        binding.llTheme.setOnClickListener {
+            val themeOptions = arrayOf("Otomatik (Sistem Varsayılanı)", "Koyu Mod", "Açık Mod")
+            val currentMode = KZBStubeApp.getSavedThemeMode()
+
+            AlertDialog.Builder(requireContext())
+                .setTitle("Uygulama Teması")
+                .setSingleChoiceItems(themeOptions, currentMode) { dialog, which ->
+                    KZBStubeApp.saveThemeMode(which)
+                    updateThemeText()
+                    dialog.dismiss()
+                }
+                .setNegativeButton("İptal", null)
+                .show()
+        }
 
         // Allow changing download directory
         binding.llFolder.setOnClickListener {
@@ -79,11 +103,12 @@ class SettingsFragment : Fragment() {
             UpdateChecker(requireActivity()).checkForUpdates(isManual = true)
         }
 
-        // Hakkında - GitHub linki tamamen kaldırıldı!
+        // Clean "Hakkında" Section
+        binding.tvAboutSubtitle.text = "KZBStube"
         binding.llAbout.setOnClickListener {
             AlertDialog.Builder(requireContext())
-                .setTitle("KZBStube v1.0.2")
-                .setMessage("YouTube Video ve Müzik İndirici\n\nKişisel kullanım için geliştirilmiştir.")
+                .setTitle("KZBStube")
+                .setMessage("Uygulama: KZBStube\nSürüm: v${BuildConfig.VERSION_NAME}\nGeliştirici: KZBS")
                 .setPositiveButton("Tamam", null)
                 .show()
         }
@@ -91,9 +116,16 @@ class SettingsFragment : Fragment() {
 
     private fun updateFolderText() {
         val dir = DownloadManager.getDownloadDirectory()
-        // Find the subtitle TextView inside llFolder
-        val tvSub = binding.llFolder.getChildAt(1) as? android.widget.TextView
-        tvSub?.text = dir.absolutePath
+        binding.tvFolderSubtitle.text = dir.absolutePath
+    }
+
+    private fun updateThemeText() {
+        val mode = KZBStubeApp.getSavedThemeMode()
+        binding.tvThemeSubtitle.text = when (mode) {
+            1 -> "Koyu Mod"
+            2 -> "Açık Mod"
+            else -> "Otomatik (Sistem Varsayılanı)"
+        }
     }
 
     override fun onDestroyView() {
