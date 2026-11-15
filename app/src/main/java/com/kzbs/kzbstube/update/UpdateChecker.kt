@@ -28,35 +28,64 @@ import java.net.URL
 class UpdateChecker(private val context: Context) {
 
     companion object {
-        const val UPDATE_URL = "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/version.json"
+        // Direct GitHub API raw content — zero CDN cache delay
+        const val API_UPDATE_URL = "https://api.github.com/repos/kzbs4652/KZBStube/contents/version.json"
+        const val RAW_UPDATE_URL = "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/version.json"
     }
 
     fun checkForUpdates(isManual: Boolean = false) {
         CoroutineScope(Dispatchers.IO).launch {
+            var jsonContent: String? = null
+
+            // 1. Try Direct GitHub API with zero-cache raw header
             try {
-                val conn = URL(UPDATE_URL).openConnection() as HttpURLConnection
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
+                val conn = URL("$API_UPDATE_URL?t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
+                conn.connectTimeout = 6000
+                conn.readTimeout = 6000
                 conn.requestMethod = "GET"
+                conn.setRequestProperty("Accept", "application/vnd.github.v3.raw")
+                conn.setRequestProperty("User-Agent", "KZBStube")
+                conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
                 conn.connect()
 
                 if (conn.responseCode == 200) {
-                    val json = conn.inputStream.bufferedReader().use { it.readText() }
-                    val update = Gson().fromJson(json, UpdateModel::class.java)
+                    jsonContent = conn.inputStream.bufferedReader().use { it.readText() }
+                }
+            } catch (_: Exception) {}
 
-                    withContext(Dispatchers.Main) {
+            // 2. Fallback to raw githubusercontent with cache buster timestamp
+            if (jsonContent == null) {
+                try {
+                    val conn = URL("$RAW_UPDATE_URL?t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
+                    conn.connectTimeout = 6000
+                    conn.readTimeout = 6000
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("User-Agent", "KZBStube")
+                    conn.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                    conn.connect()
+
+                    if (conn.responseCode == 200) {
+                        jsonContent = conn.inputStream.bufferedReader().use { it.readText() }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            withContext(Dispatchers.Main) {
+                if (jsonContent != null) {
+                    try {
+                        val update = Gson().fromJson(jsonContent, UpdateModel::class.java)
                         if (update.latestVersionCode > BuildConfig.VERSION_CODE) {
                             showUpdateDialog(update)
                         } else if (isManual) {
                             Toast.makeText(context, "En güncel sürümü kullanıyorsunuz (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
                         }
+                    } catch (e: Exception) {
+                        if (isManual) {
+                            Toast.makeText(context, "Güncelleme bilgisi okunamadı.", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                }
-            } catch (e: Exception) {
-                if (isManual) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Güncelleme kontrolü başarısız oldu.", Toast.LENGTH_SHORT).show()
-                    }
+                } else if (isManual) {
+                    Toast.makeText(context, "Güncelleme sunucusuna bağlanılamadı. İnternet bağlantınızı kontrol edin.", Toast.LENGTH_SHORT).show()
                 }
             }
         }
