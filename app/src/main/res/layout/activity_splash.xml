@@ -44,7 +44,7 @@
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true"
         android:layout_marginBottom="32dp"
-        android:text="v1.0.1"
+        android:text="v1.0.2"
         android:textColor="@color/kzbs_red"
         android:textSize="13sp"
         android:textStyle="bold" />

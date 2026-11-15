@@ -8,12 +8,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import com.kzbs.kzbstube.R
 import com.kzbs.kzbstube.databinding.FragmentHomeBinding
 
 class HomeFragment : Fragment() {
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
+    private var selectedMode = "MP4" // "MP4" or "MP3"
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -27,11 +29,31 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // Mode Switcher
+        binding.btnModeVideo.setOnClickListener {
+            selectedMode = "MP4"
+            binding.btnModeVideo.setBackgroundResource(R.drawable.bg_red_button)
+            binding.btnModeVideo.setTextColor(resources.getColor(R.color.text_primary, null))
+            binding.btnModeAudio.setBackgroundResource(R.drawable.bg_search_box)
+            binding.btnModeAudio.setTextColor(resources.getColor(R.color.text_secondary, null))
+            binding.etSearch.hint = "Video ismi yazın veya link yapıştırın..."
+        }
+
+        binding.btnModeAudio.setOnClickListener {
+            selectedMode = "MP3"
+            binding.btnModeAudio.setBackgroundResource(R.drawable.bg_red_button)
+            binding.btnModeAudio.setTextColor(resources.getColor(R.color.text_primary, null))
+            binding.btnModeVideo.setBackgroundResource(R.drawable.bg_search_box)
+            binding.btnModeVideo.setTextColor(resources.getColor(R.color.text_secondary, null))
+            binding.etSearch.hint = "Şarkı veya müzik ismi yazın..."
+        }
+
         binding.btnSearch.setOnClickListener {
             val query = binding.etSearch.text.toString().trim()
             if (query.isNotEmpty()) {
                 val intent = Intent(requireContext(), SearchResultsActivity::class.java).apply {
                     putExtra("QUERY", query)
+                    putExtra("MODE", selectedMode)
                 }
                 startActivity(intent)
             }

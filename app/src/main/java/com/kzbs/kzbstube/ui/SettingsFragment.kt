@@ -82,7 +82,7 @@ class SettingsFragment : Fragment() {
         // Hakkında - GitHub linki tamamen kaldırıldı!
         binding.llAbout.setOnClickListener {
             AlertDialog.Builder(requireContext())
-                .setTitle("KZBStube v1.0.1")
+                .setTitle("KZBStube v1.0.2")
                 .setMessage("YouTube Video ve Müzik İndirici\n\nKişisel kullanım için geliştirilmiştir.")
                 .setPositiveButton("Tamam", null)
                 .show()

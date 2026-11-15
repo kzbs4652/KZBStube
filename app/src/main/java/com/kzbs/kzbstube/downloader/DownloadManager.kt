@@ -1,6 +1,7 @@
 package com.kzbs.kzbstube.downloader
 
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.os.Environment
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -10,11 +11,11 @@ import com.kzbs.kzbstube.model.VideoItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -43,7 +44,6 @@ object DownloadManager {
                 return customDir
             }
         }
-        // Direct Download folder in device storage (no extra subfolder)
         return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
     }
 
@@ -69,9 +69,18 @@ object DownloadManager {
         prefs.edit().putString(KEY_DOWNLOADS, json).apply()
     }
 
-    fun startDownload(video: VideoItem, format: String, quality: String, downloadUrl: String) {
-        val ext = if (format == "MP3") "mp3" else "mp4"
-        val cleanTitle = video.title.replace(Regex("[^a-zA-Z0-9.-]"), "_")
+    /**
+     * Downloads real bytes from the streaming URL into device storage
+     */
+    fun startDownload(
+        video: VideoItem,
+        format: String,
+        quality: String,
+        streamUrl: String,
+        totalSizeBytes: Long
+    ) {
+        val ext = if (format.contains("MP3", ignoreCase = true)) "mp3" else "mp4"
+        val cleanTitle = video.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
         val downloadFolder = getDownloadDirectory()
         if (!downloadFolder.exists()) downloadFolder.mkdirs()
 
@@ -82,44 +91,70 @@ object DownloadManager {
             title = video.title,
             author = video.author,
             thumbnailUrl = video.thumbnailUrl,
-            format = format,
+            format = if (ext == "mp3") "MP3" else "MP4",
             quality = quality,
             filePath = targetFile.absolutePath,
-            totalBytes = 82 * 1024 * 1024L
+            totalBytes = if (totalSizeBytes > 0) totalSizeBytes else 15 * 1024 * 1024L
         )
 
         activeDownloads.add(0, item)
         onProgressUpdate?.invoke()
 
         val job = CoroutineScope(Dispatchers.IO).launch {
+            var input: InputStream? = null
+            var output: FileOutputStream? = null
             try {
-                var lastTime = System.currentTimeMillis()
-                var lastBytes = 0L
+                if (streamUrl.startsWith("http")) {
+                    val conn = URL(streamUrl).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.setRequestProperty(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    )
+                    conn.connect()
 
-                // Stream downloading simulation / direct connection
-                val totalSteps = 100
-                for (step in 1..totalSteps) {
-                    if (item.isPaused) {
-                        while (item.isPaused) { delay(500) }
+                    val contentLength = conn.contentLengthLong
+                    if (contentLength > 0) {
+                        item.totalBytes = contentLength
                     }
-                    delay(80)
-                    item.downloadedBytes = (item.totalBytes * step) / totalSteps
 
-                    val now = System.currentTimeMillis()
-                    val diffTime = now - lastTime
-                    if (diffTime >= 400) {
-                        val diffBytes = item.downloadedBytes - lastBytes
-                        item.speedBytesPerSec = (diffBytes / (diffTime / 1000.0))
-                        lastBytes = item.downloadedBytes
-                        lastTime = now
-                        withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
+                    input = conn.inputStream
+                    output = FileOutputStream(targetFile)
+
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var lastTime = System.currentTimeMillis()
+                    var lastBytes = 0L
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        if (item.isPaused) {
+                            while (item.isPaused) { kotlinx.coroutines.delay(500) }
+                        }
+                        output.write(buffer, 0, bytesRead)
+                        item.downloadedBytes += bytesRead
+
+                        val now = System.currentTimeMillis()
+                        val diff = now - lastTime
+                        if (diff >= 400) {
+                            val byteDiff = item.downloadedBytes - lastBytes
+                            item.speedBytesPerSec = (byteDiff / (diff / 1000.0))
+                            lastBytes = item.downloadedBytes
+                            lastTime = now
+                            withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
+                        }
                     }
+
+                    output.flush()
                 }
 
-                // Create empty placeholder media file if doesn't exist
-                if (!targetFile.exists()) {
-                    targetFile.createNewFile()
-                }
+                // Register with Android Media Scanner
+                MediaScannerConnection.scanFile(
+                    KZBStubeApp.appContext,
+                    arrayOf(targetFile.absolutePath),
+                    arrayOf(if (ext == "mp3") "audio/mpeg" else "video/mp4"),
+                    null
+                )
 
                 item.isCompleted = true
                 item.speedBytesPerSec = 0.0
@@ -128,8 +163,12 @@ object DownloadManager {
                 saveCompleted()
                 withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
             } catch (e: Exception) {
+                e.printStackTrace()
                 activeDownloads.remove(item)
                 withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
+            } finally {
+                try { input?.close() } catch (_: Exception) {}
+                try { output?.close() } catch (_: Exception) {}
             }
         }
 

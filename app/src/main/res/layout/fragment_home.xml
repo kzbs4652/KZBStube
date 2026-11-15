@@ -25,7 +25,7 @@
 
             <View
                 android:layout_width="match_parent"
-                android:layout_height="64dp" />
+                android:layout_height="50dp" />
 
             <!-- KZBStube Custom Logo -->
             <ImageView
@@ -36,7 +36,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="10dp"
                 android:text="KZBStube"
                 android:textColor="@color/text_primary"
                 android:textSize="28sp"
@@ -52,7 +52,38 @@
 
             <View
                 android:layout_width="match_parent"
-                android:layout_height="32dp" />
+                android:layout_height="24dp" />
+
+            <!-- Format Selector (MP4 vs MP3 Mode) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="12dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnModeVideo"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_red_button"
+                    android:text="🎬 Video (MP4)"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnModeAudio"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_search_box"
+                    android:text="🎵 Müzik (MP3)"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
 
             <!-- Search Bar with Red Action Button -->
             <LinearLayout
@@ -75,7 +106,7 @@
                     android:layout_marginStart="10dp"
                     android:layout_weight="1"
                     android:background="@null"
-                    android:hint="Video ismi yazın veya link yapıştırın..."
+                    android:hint="Video veya şarkı ismi yazın..."
                     android:imeOptions="actionSearch"
                     android:inputType="text"
                     android:textColor="@color/text_primary"

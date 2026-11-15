@@ -10,6 +10,14 @@ data class VideoItem(
     val thumbnailUrl: String
 )
 
+data class StreamOption(
+    val format: String, // MP4 or MP3
+    val quality: String, // 720p, 360p, Audio HQ
+    val sizeBytes: Long,
+    val sizeFormatted: String,
+    val streamUrl: String
+)
+
 data class DownloadItem(
     val id: String,
     val videoId: String,
@@ -19,7 +27,7 @@ data class DownloadItem(
     val format: String, // MP4 or MP3
     val quality: String, // 720p, 1080p, 320 kbps
     val filePath: String,
-    val totalBytes: Long,
+    var totalBytes: Long,
     var downloadedBytes: Long = 0,
     var speedBytesPerSec: Double = 0.0,
     var isCompleted: Boolean = false,
