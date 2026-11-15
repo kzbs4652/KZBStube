@@ -1,0 +1,54 @@
+package com.kzbs.kzbstube.model
+
+data class VideoItem(
+    val id: String,
+    val title: String,
+    val author: String,
+    val duration: String,
+    val viewCount: String,
+    val uploadDate: String,
+    val thumbnailUrl: String
+)
+
+data class DownloadItem(
+    val id: String,
+    val videoId: String,
+    val title: String,
+    val author: String,
+    val thumbnailUrl: String,
+    val format: String, // MP4 or MP3
+    val quality: String, // 720p, 1080p, 320 kbps
+    val filePath: String,
+    val totalBytes: Long,
+    var downloadedBytes: Long = 0,
+    var speedBytesPerSec: Double = 0.0,
+    var isCompleted: Boolean = false,
+    var isPaused: Boolean = false
+) {
+    val progressPercent: Int
+        get() = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt().coerceIn(0, 100) else 0
+
+    val sizeFormatted: String
+        get() {
+            val downMB = String.format("%.1f", downloadedBytes / (1024.0 * 1024.0))
+            val totMB = String.format("%.1f", totalBytes / (1024.0 * 1024.0))
+            return "$downMB MB / $totMB MB"
+        }
+
+    val speedFormatted: String
+        get() {
+            return if (speedBytesPerSec > 1024 * 1024) {
+                String.format("%.1f MB/s", speedBytesPerSec / (1024.0 * 1024.0))
+            } else {
+                String.format("%.0f KB/s", speedBytesPerSec / 1024.0)
+            }
+        }
+}
+
+data class UpdateModel(
+    val latestVersionCode: Int,
+    val latestVersionName: String,
+    val changelog: String,
+    val apkUrl: String,
+    val isMandatory: Boolean = false
+)

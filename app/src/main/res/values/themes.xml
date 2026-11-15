@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.KZBStube" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/kzbs_red</item>
+        <item name="colorSecondary">@color/kzbs_red_bright</item>
+        <item name="android:statusBarColor">@color/kzbs_bg</item>
+        <item name="android:navigationBarColor">@color/kzbs_nav_bg</item>
+        <item name="android:windowBackground">@color/kzbs_bg</item>
+    </style>
+
+    <style name="Theme.KZBStube.NoActionBar" parent="Theme.KZBStube">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+</resources>

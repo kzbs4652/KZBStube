@@ -1,0 +1,7 @@
+{
+  "latestVersionCode": 1,
+  "latestVersionName": "1.0.0",
+  "changelog": "• İlk resmi sürüm (v1.0.0)\n• YouTube MP4 video ve MP3 müzik indirme\n• Akıllı link ve arama motoru\n• Otomatik uygulama içi güncelleme sistemi",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.0.apk",
+  "isMandatory": false
+}
