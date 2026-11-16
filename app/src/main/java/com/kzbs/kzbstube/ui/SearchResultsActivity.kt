@@ -1,6 +1,7 @@
 package com.kzbs.kzbstube.ui
 
 import android.app.AlertDialog
+import android.app.PendingIntent
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -13,29 +14,36 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.kzbs.kzbstube.KZBStubeApp
 import com.kzbs.kzbstube.R
 import com.kzbs.kzbstube.databinding.ActivitySearchResultsBinding
 import com.kzbs.kzbstube.databinding.ItemVideoBinding
 import com.kzbs.kzbstube.downloader.DownloadManager
 import com.kzbs.kzbstube.downloader.YouTubeHelper
 import com.kzbs.kzbstube.model.VideoItem
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 class SearchResultsActivity : AppCompatActivity() {
+
+    companion object {
+        const val ACTION_PREVIEW_PLAY_PAUSE = "com.kzbs.kzbstube.ACTION_PREVIEW_PLAY_PAUSE"
+        const val ACTION_PREVIEW_REWIND = "com.kzbs.kzbstube.ACTION_PREVIEW_REWIND"
+        const val ACTION_PREVIEW_FORWARD = "com.kzbs.kzbstube.ACTION_PREVIEW_FORWARD"
+        const val ACTION_PREVIEW_CLOSE = "com.kzbs.kzbstube.ACTION_PREVIEW_CLOSE"
+        const val NOTIF_ID_PREVIEW = 20001
+    }
 
     private lateinit var binding: ActivitySearchResultsBinding
     private val videoList = mutableListOf<VideoItem>()
@@ -44,6 +52,9 @@ class SearchResultsActivity : AppCompatActivity() {
     private var mediaPlayer: MediaPlayer? = null
     private var isPlayingAudio = false
     private var activePreviewVideoId: String? = null
+    private var currentPlayingVideo: VideoItem? = null
+    private var isUserSeeking = false
+    private var progressJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,26 +98,121 @@ class SearchResultsActivity : AppCompatActivity() {
             true
         }
 
-        // Mini audio player controls
+        // Mini player controls
         binding.btnMiniPlayPause.setOnClickListener {
-            mediaPlayer?.let { mp ->
-                if (mp.isPlaying) {
-                    mp.pause()
-                    isPlayingAudio = false
-                    binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                    binding.tvMiniStatus.text = "Duraklatıldı"
-                } else {
-                    mp.start()
-                    isPlayingAudio = true
-                    binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    binding.tvMiniStatus.text = "Çalıyor 🎵"
-                }
-            }
+            togglePlayPause()
+        }
+
+        binding.btnMiniRewind.setOnClickListener {
+            seekBy(-10000)
+        }
+
+        binding.btnMiniForward.setOnClickListener {
+            seekBy(10000)
         }
 
         binding.btnMiniClose.setOnClickListener {
             stopAudio()
             binding.llMiniPlayer.visibility = View.GONE
+            dismissPreviewNotification()
+        }
+
+        // Seekbar tracking
+        binding.sbMiniProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    binding.tvMiniCurrentTime.text = formatTime(progress)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isUserSeeking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isUserSeeking = false
+                seekBar?.let {
+                    mediaPlayer?.seekTo(it.progress)
+                    updatePreviewNotification()
+                }
+            }
+        })
+
+        // Wire status bar notification actions
+        setupPreviewController()
+    }
+
+    private fun setupPreviewController() {
+        PreviewController.onPlayPause = {
+            runOnUiThread { togglePlayPause() }
+        }
+        PreviewController.onRewind = {
+            runOnUiThread { seekBy(-10000) }
+        }
+        PreviewController.onForward = {
+            runOnUiThread { seekBy(10000) }
+        }
+        PreviewController.onClose = {
+            runOnUiThread {
+                stopAudio()
+                binding.llMiniPlayer.visibility = View.GONE
+                dismissPreviewNotification()
+            }
+        }
+    }
+
+    private fun togglePlayPause() {
+        mediaPlayer?.let { mp ->
+            if (mp.isPlaying) {
+                mp.pause()
+                isPlayingAudio = false
+                binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                binding.tvMiniStatus.text = "Duraklatıldı"
+            } else {
+                mp.start()
+                isPlayingAudio = true
+                binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                binding.tvMiniStatus.text = "Çalıyor 🎵"
+                startProgressUpdater()
+            }
+            updatePreviewNotification()
+        }
+    }
+
+    private fun seekBy(deltaMillis: Int) {
+        mediaPlayer?.let { mp ->
+            val duration = mp.duration.coerceAtLeast(0)
+            val current = mp.currentPosition
+            val target = (current + deltaMillis).coerceIn(0, duration)
+            mp.seekTo(target)
+            binding.sbMiniProgress.progress = target
+            binding.tvMiniCurrentTime.text = formatTime(target)
+            updatePreviewNotification()
+        }
+    }
+
+    private fun startProgressUpdater() {
+        progressJob?.cancel()
+        progressJob = lifecycleScope.launch {
+            while (isPlayingAudio) {
+                mediaPlayer?.let { mp ->
+                    if (!isUserSeeking) {
+                        try {
+                            if (mp.isPlaying) {
+                                val current = mp.currentPosition
+                                val total = mp.duration
+                                binding.sbMiniProgress.progress = current
+                                binding.tvMiniCurrentTime.text = formatTime(current)
+                                if (total > 0 && binding.sbMiniProgress.max != total) {
+                                    binding.sbMiniProgress.max = total
+                                    binding.tvMiniTotalTime.text = formatTime(total)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+                delay(500)
+            }
         }
     }
 
@@ -140,15 +246,20 @@ class SearchResultsActivity : AppCompatActivity() {
     }
 
     /**
-     * Blazing fast audio preview using High-Speed Range caching.
-     * Starts playback in under 1 second without YouTube bitrate throttling.
+     * Starts audio preview in mini player and shows interactive status bar notification
      */
     private fun playAudioInApp(video: VideoItem) {
+        stopAudio()
         activePreviewVideoId = video.id
+        currentPlayingVideo = video
+
         binding.llMiniPlayer.visibility = View.VISIBLE
         binding.tvMiniTitle.text = video.title
-        binding.tvMiniStatus.text = "Hazırlanıyor..."
-        binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+        binding.tvMiniStatus.text = "Ses akışı aranıyor..."
+        binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+        binding.sbMiniProgress.progress = 0
+        binding.tvMiniCurrentTime.text = "00:00"
+        binding.tvMiniTotalTime.text = "00:00"
 
         Glide.with(this).load(video.thumbnailUrl).into(binding.ivMiniThumb)
 
@@ -161,78 +272,14 @@ class SearchResultsActivity : AppCompatActivity() {
                 return@launch
             }
 
-            binding.tvMiniStatus.text = "Hızlı yükleniyor..."
+            binding.tvMiniStatus.text = "Ses akışı aranıyor..."
             val streams = YouTubeHelper.resolveStreams(video.id)
             val audioOpt = streams.firstOrNull { it.format == "MP3" } ?: streams.firstOrNull()
 
             if (audioOpt != null && audioOpt.streamUrl.startsWith("http")) {
-                withContext(Dispatchers.IO) {
-                    try {
-                        var streamUrl = audioOpt.streamUrl
-                        // Resolve redirect to get direct CDN endpoint
-                        val headConn = URL(streamUrl).openConnection() as HttpURLConnection
-                        headConn.requestMethod = "HEAD"
-                        headConn.connectTimeout = 6000
-                        headConn.readTimeout = 6000
-                        headConn.setRequestProperty("User-Agent", "Mozilla/5.0")
-                        headConn.instanceFollowRedirects = true
-                        headConn.connect()
-
-                        if (headConn.responseCode in listOf(301, 302, 303, 307, 308)) {
-                            val loc = headConn.getHeaderField("Location")
-                            if (!loc.isNullOrEmpty()) streamUrl = loc
-                        }
-
-                        val totalBytes = if (headConn.contentLengthLong > 0) headConn.contentLengthLong else audioOpt.sizeBytes
-                        headConn.disconnect()
-
-                        // Download audio into local cache with unthrottled Range chunks
-                        val fos = FileOutputStream(cacheFile)
-                        val bos = BufferedOutputStream(fos, 65536)
-                        val buffer = ByteArray(65536)
-                        var downloaded = 0L
-                        val chunkSize = 512 * 1024L
-                        val maxBytes = if (totalBytes > 0) totalBytes else 4 * 1024 * 1024L
-
-                        while (downloaded < maxBytes && activePreviewVideoId == video.id) {
-                            val end = minOf(downloaded + chunkSize - 1, maxBytes - 1)
-                            val rc = URL(streamUrl).openConnection() as HttpURLConnection
-                            rc.connectTimeout = 8000
-                            rc.readTimeout = 12000
-                            rc.setRequestProperty("User-Agent", "Mozilla/5.0")
-                            rc.setRequestProperty("Range", "bytes=$downloaded-$end")
-                            rc.connect()
-
-                            val code = rc.responseCode
-                            if (code == 206 || code == 200) {
-                                val input = BufferedInputStream(rc.inputStream, 65536)
-                                var read: Int
-                                while (input.read(buffer).also { read = it } != -1) {
-                                    bos.write(buffer, 0, read)
-                                    downloaded += read
-                                }
-                                input.close()
-                                rc.disconnect()
-                                if (code == 200) break
-                            } else {
-                                break
-                            }
-                        }
-                        bos.flush()
-                        bos.close()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-
-                // If user switched to another song while downloading, don't play old one
                 if (activePreviewVideoId != video.id) return@launch
-
-                if (cacheFile.exists() && cacheFile.length() > 30000) {
-                    playLocalAudio(cacheFile.absolutePath)
-                } else {
-                    playStreamDirect(audioOpt.streamUrl)
-                }
+                binding.tvMiniStatus.text = "Yükleniyor..."
+                playStreamDirect(audioOpt.streamUrl)
             } else {
                 binding.tvMiniStatus.text = "Ses akışı bulunamadı"
             }
@@ -255,14 +302,21 @@ class SearchResultsActivity : AppCompatActivity() {
                     isPlayingAudio = true
                     binding.tvMiniStatus.text = "Çalıyor 🎵"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    binding.sbMiniProgress.max = duration
+                    binding.tvMiniTotalTime.text = formatTime(duration)
+                    startProgressUpdater()
+                    updatePreviewNotification()
                 }
                 setOnCompletionListener {
                     binding.tvMiniStatus.text = "Tamamlandı"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                    isPlayingAudio = false
+                    updatePreviewNotification()
                 }
                 setOnErrorListener { _, _, _ ->
                     binding.tvMiniStatus.text = "Çalma hatası"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                    isPlayingAudio = false
                     true
                 }
                 prepareAsync()
@@ -292,14 +346,29 @@ class SearchResultsActivity : AppCompatActivity() {
                     isPlayingAudio = true
                     binding.tvMiniStatus.text = "Çalıyor 🎵"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    binding.sbMiniProgress.max = duration
+                    binding.tvMiniTotalTime.text = formatTime(duration)
+                    startProgressUpdater()
+                    updatePreviewNotification()
+                }
+                setOnInfoListener { _, what, _ ->
+                    when (what) {
+                        MediaPlayer.MEDIA_INFO_BUFFERING_START -> binding.tvMiniStatus.text = "Yükleniyor..."
+                        MediaPlayer.MEDIA_INFO_BUFFERING_END -> binding.tvMiniStatus.text = "Çalıyor 🎵"
+                        else -> return@setOnInfoListener false
+                    }
+                    true
                 }
                 setOnCompletionListener {
                     binding.tvMiniStatus.text = "Tamamlandı"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                    isPlayingAudio = false
+                    updatePreviewNotification()
                 }
                 setOnErrorListener { _, _, _ ->
                     binding.tvMiniStatus.text = "Ses oynatılamadı"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                    isPlayingAudio = false
                     true
                 }
                 prepareAsync()
@@ -309,13 +378,98 @@ class SearchResultsActivity : AppCompatActivity() {
         }
     }
 
-    private fun stopAudio() {
+    private fun updatePreviewNotification() {
+        val video = currentPlayingVideo ?: return
+        if (!KZBStubeApp.areNotificationsEnabled()) return
+
+        val context = this
+        val notifManager = NotificationManagerCompat.from(context)
+
+        val intentOpen = Intent(context, SearchResultsActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingOpen = PendingIntent.getActivity(
+            context, 201, intentOpen, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val intentPlayPause = Intent(context, PreviewNotificationReceiver::class.java).apply {
+            action = ACTION_PREVIEW_PLAY_PAUSE
+        }
+        val pendingPlayPause = PendingIntent.getBroadcast(
+            context, 202, intentPlayPause, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val intentRewind = Intent(context, PreviewNotificationReceiver::class.java).apply {
+            action = ACTION_PREVIEW_REWIND
+        }
+        val pendingRewind = PendingIntent.getBroadcast(
+            context, 203, intentRewind, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val intentForward = Intent(context, PreviewNotificationReceiver::class.java).apply {
+            action = ACTION_PREVIEW_FORWARD
+        }
+        val pendingForward = PendingIntent.getBroadcast(
+            context, 204, intentForward, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val intentClose = Intent(context, PreviewNotificationReceiver::class.java).apply {
+            action = ACTION_PREVIEW_CLOSE
+        }
+        val pendingClose = PendingIntent.getBroadcast(
+            context, 205, intentClose, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val currentPos = mediaPlayer?.currentPosition ?: 0
+        val totalDuration = mediaPlayer?.duration ?: 0
+        val timeStr = "${formatTime(currentPos)} / ${formatTime(totalDuration)}"
+
+        val playPauseIcon = if (isPlayingAudio) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val playPauseTitle = if (isPlayingAudio) "Duraklat" else "Oynat"
+
+        val builder = NotificationCompat.Builder(context, KZBStubeApp.NOTIF_CHANNEL_PREVIEW)
+            .setSmallIcon(R.drawable.ic_kzbs_logo)
+            .setContentTitle(video.title)
+            .setContentText("${video.author} • $timeStr")
+            .setSubText("KZBStube Önizleme")
+            .setContentIntent(pendingOpen)
+            .setOngoing(isPlayingAudio)
+            .setOnlyAlertOnce(true)
+            .addAction(android.R.drawable.ic_media_rew, "-10s", pendingRewind)
+            .addAction(playPauseIcon, playPauseTitle, pendingPlayPause)
+            .addAction(android.R.drawable.ic_media_ff, "+10s", pendingForward)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Kapat", pendingClose)
+
+        if (totalDuration > 0) {
+            builder.setProgress(totalDuration, currentPos, false)
+        }
+
         try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-            mediaPlayer = null
-            isPlayingAudio = false
+            notifManager.notify(NOTIF_ID_PREVIEW, builder.build())
+        } catch (_: SecurityException) {}
+    }
+
+    private fun dismissPreviewNotification() {
+        try {
+            val notifManager = NotificationManagerCompat.from(this)
+            notifManager.cancel(NOTIF_ID_PREVIEW)
         } catch (_: Exception) {}
+    }
+
+    private fun formatTime(millis: Int): String {
+        val totalSeconds = (millis / 1000).coerceAtLeast(0)
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format("%02d:%02d", minutes, seconds)
+    }
+
+    private fun stopAudio() {
+        progressJob?.cancel()
+        val player = mediaPlayer
+        mediaPlayer = null
+        isPlayingAudio = false
+        try { player?.stop() } catch (_: Exception) {}
+        try { player?.release() } catch (_: Exception) {}
     }
 
     private fun showDownloadOptionsDialog(video: VideoItem) {
@@ -332,17 +486,25 @@ class SearchResultsActivity : AppCompatActivity() {
             .setView(view)
             .create()
 
+        dialog.show()
         lifecycleScope.launch {
             val streams = YouTubeHelper.resolveStreams(video.id)
 
             val filteredStreams = streams.filter {
                 if (currentMode == "MP3") it.format == "MP3" else it.format == "MP4"
-            }.ifEmpty { streams }
+            }
 
             pbLoading.visibility = View.GONE
             tvLabel.visibility = View.VISIBLE
+            if (filteredStreams.isEmpty()) {
+                tvLabel.text = "İndirme bağlantısı bulunamadı. Biraz sonra tekrar dene."
+                rgOptions.visibility = View.GONE
+                btnStart.visibility = View.GONE
+                return@launch
+            }
             btnStart.visibility = View.VISIBLE
 
+            rgOptions.visibility = View.VISIBLE
             rgOptions.removeAllViews()
             filteredStreams.forEachIndexed { index, opt ->
                 val rb = RadioButton(this@SearchResultsActivity).apply {
@@ -376,13 +538,16 @@ class SearchResultsActivity : AppCompatActivity() {
                 startActivity(intent)
             }
         }
-
-        dialog.show()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopAudio()
+        dismissPreviewNotification()
+        PreviewController.onPlayPause = null
+        PreviewController.onRewind = null
+        PreviewController.onForward = null
+        PreviewController.onClose = null
     }
 }
 

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/kzbs_bg">
@@ -110,64 +111,143 @@
 
     </LinearLayout>
 
-    <!-- In-App Mini Music Player Bar -->
+    <!-- In-App Mini Music Player Bar with SeekBar, Rewind, Forward & Close -->
     <LinearLayout
         android:id="@+id/llMiniPlayer"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="wrap_content"
         android:layout_alignParentBottom="true"
         android:background="@color/kzbs_card_selected"
-        android:elevation="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="14dp"
+        android:elevation="12dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp"
         android:visibility="gone">
 
-        <ImageView
-            android:id="@+id/ivMiniThumb"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:scaleType="centerCrop" />
-
+        <!-- Saniye ve İlerleme Barı (SeekBar & Time Display) -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
             <TextView
-                android:id="@+id/tvMiniTitle"
-                android:layout_width="match_parent"
+                android:id="@+id/tvMiniCurrentTime"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/text_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:fontFamily="monospace"
+                android:text="00:00"
+                android:textColor="@color/text_secondary"
+                android:textSize="10sp" />
+
+            <SeekBar
+                android:id="@+id/sbMiniProgress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxHeight="4dp"
+                android:minHeight="4dp"
+                android:paddingHorizontal="6dp"
+                android:progressTint="@color/kzbs_red"
+                android:thumbTint="@color/kzbs_red" />
 
             <TextView
-                android:id="@+id/tvMiniStatus"
-                android:layout_width="match_parent"
+                android:id="@+id/tvMiniTotalTime"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Çalıyor..."
-                android:textColor="@color/kzbs_red"
-                android:textSize="11sp" />
+                android:fontFamily="monospace"
+                android:text="00:00"
+                android:textColor="@color/text_secondary"
+                android:textSize="10sp" />
         </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/btnMiniPlayPause"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_media_pause" />
+        <!-- Track Info & Controls Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <ImageButton
-            android:id="@+id/btnMiniClose"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_close_clear_cancel" />
+            <androidx.cardview.widget.CardView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                app:cardCornerRadius="6dp"
+                app:cardElevation="0dp">
+
+                <ImageView
+                    android:id="@+id/ivMiniThumb"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerCrop" />
+            </androidx.cardview.widget.CardView>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvMiniTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvMiniStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Yükleniyor..."
+                    android:textColor="@color/kzbs_red"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- 10 saniye geri sarma -->
+            <ImageButton
+                android:id="@+id/btnMiniRewind"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?selectableItemBackgroundBorderless"
+                android:contentDescription="10 sn Geri"
+                android:src="@android:drawable/ic_media_rew" />
+
+            <!-- Oynat / Duraklat -->
+            <ImageButton
+                android:id="@+id/btnMiniPlayPause"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginHorizontal="2dp"
+                android:background="?selectableItemBackgroundBorderless"
+                android:contentDescription="Oynat / Duraklat"
+                android:src="@android:drawable/ic_media_play" />
+
+            <!-- 10 saniye ileri sarma -->
+            <ImageButton
+                android:id="@+id/btnMiniForward"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?selectableItemBackgroundBorderless"
+                android:contentDescription="10 sn İleri"
+                android:src="@android:drawable/ic_media_ff" />
+
+            <!-- Komple kapatma çarpısı (X) -->
+            <ImageButton
+                android:id="@+id/btnMiniClose"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:background="?selectableItemBackgroundBorderless"
+                android:contentDescription="Önizlemeyi Kapat"
+                android:src="@android:drawable/ic_menu_close_clear_cancel" />
+
+        </LinearLayout>
 
     </LinearLayout>
 

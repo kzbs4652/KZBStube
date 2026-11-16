@@ -17,6 +17,7 @@ class KZBStubeApp : Application() {
         const val KEY_THEME_MODE = "theme_mode" // 0: Auto (System), 1: Dark, 2: Light
         const val KEY_NOTIFICATIONS = "notifications_enabled"
         const val NOTIF_CHANNEL_ID = "kzbstube_downloads"
+        const val NOTIF_CHANNEL_PREVIEW = "kzbstube_preview"
 
         fun applyTheme(mode: Int) {
             val nightMode = when (mode) {
@@ -57,13 +58,16 @@ class KZBStubeApp : Application() {
         val mode = getSavedThemeMode()
         applyTheme(mode)
 
-        // Create notification channel for downloads
-        createNotificationChannel()
+        // Create notification channels
+        createNotificationChannels()
     }
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+
+            // Channel 1: Downloads
+            val downloadChannel = NotificationChannel(
                 NOTIF_CHANNEL_ID,
                 "KZBStube İndirmeler",
                 NotificationManager.IMPORTANCE_LOW
@@ -71,8 +75,18 @@ class KZBStubeApp : Application() {
                 description = "İndirme durumu ve tamamlama bildirimleri"
                 setShowBadge(true)
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+            manager.createNotificationChannel(downloadChannel)
+
+            // Channel 2: Audio Preview Player
+            val previewChannel = NotificationChannel(
+                NOTIF_CHANNEL_PREVIEW,
+                "KZBStube Önizleme Oynatıcı",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Müzik önizleme oynatıcı ve kontrol bildirimleri"
+                setShowBadge(false)
+            }
+            manager.createNotificationChannel(previewChannel)
         }
     }
 }

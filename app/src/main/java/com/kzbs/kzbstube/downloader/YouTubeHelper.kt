@@ -4,38 +4,20 @@ import com.kzbs.kzbstube.model.StreamOption
 import com.kzbs.kzbstube.model.VideoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import javax.net.ssl.HttpsURLConnection
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
-import java.security.cert.X509Certificate
 
 object YouTubeHelper {
 
-    private val INVIDIOUS_INSTANCES = listOf(
-        "https://yt.chocolatemoo53.com",
-        "https://iv.ggtyler.dev",
-        "https://yewtu.be",
-        "https://invidious.einfachzocken.eu"
-    )
+    private const val INSTANCE_DIRECTORY_URL =
+        "https://api.invidious.io/instances.json?pretty=1&sort_by=type,users"
+    private const val FALLBACK_INSTANCE = "https://yt.chocolatemoo53.com"
+    private const val INSTANCE_CACHE_MS = 6 * 60 * 60 * 1000L
 
-    init {
-        // Accept all SSL certs to avoid handshake failures on community Invidious instances
-        try {
-            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-                override fun getAcceptedIssuers(): Array<X509Certificate>? = null
-                override fun checkClientTrusted(certs: Array<X509Certificate>?, authType: String?) {}
-                override fun checkServerTrusted(certs: Array<X509Certificate>?, authType: String?) {}
-            })
-            val sc = SSLContext.getInstance("SSL")
-            sc.init(null, trustAllCerts, java.security.SecureRandom())
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.socketFactory)
-            HttpsURLConnection.setDefaultHostnameVerifier { _, _ -> true }
-        } catch (_: Exception) {}
-    }
+    @Volatile private var cachedInstances: List<String> = emptyList()
+    @Volatile private var instanceCacheTime = 0L
 
     fun extractVideoId(input: String): String? {
         val clean = input.trim()
@@ -161,13 +143,13 @@ object YouTubeHelper {
      * Resolves REAL streams and exact byte sizes from YouTube
      */
     suspend fun resolveStreams(videoId: String): List<StreamOption> = withContext(Dispatchers.IO) {
-        val options = mutableListOf<StreamOption>()
-
-        for (instance in INVIDIOUS_INSTANCES) {
+        for (instance in getApiInstances()) {
+            val options = mutableListOf<StreamOption>()
+            var conn: HttpURLConnection? = null
             try {
                 val url = URL("$instance/api/v1/videos/$videoId")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 4000
+                conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 2500
                 conn.readTimeout = 4000
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 conn.connect()
@@ -179,53 +161,29 @@ object YouTubeHelper {
                     val adaptive = data.optJSONArray("adaptiveFormats")
                     val formatStreams = data.optJSONArray("formatStreams")
 
-                    // 1. Audio stream (MP3 / M4A)
-                    var bestAudioUrl = ""
-                    var bestAudioSize = 0L
-
+                    // The adaptive URL can be rejected by Google's CDN with 403.
+                    // Use Invidious' latest_version redirect for the audio stream instead.
+                    val audioFormats = mutableListOf<JSONObject>()
                     if (adaptive != null) {
                         for (i in 0 until adaptive.length()) {
-                            val af = adaptive.optJSONObject(i) ?: continue
-                            val type = af.optString("type", "")
-                            var streamUrl = af.optString("url", "")
-                            if (streamUrl.startsWith("/")) {
-                                streamUrl = "$instance$streamUrl"
-                            }
-
-                            if (type.contains("audio/mp4") && streamUrl.isNotEmpty()) {
-                                val clen = af.optLong("clen", 0L)
-                                if (clen > bestAudioSize) {
-                                    bestAudioSize = clen
-                                    bestAudioUrl = streamUrl
-                                }
+                            val audio = adaptive.optJSONObject(i) ?: continue
+                            if (audio.optString("type").contains("audio/mp4")) {
+                                audioFormats.add(audio)
                             }
                         }
                     }
-
-                    if (bestAudioUrl.isNotEmpty()) {
-                        val sizeMB = String.format("%.2f MB", bestAudioSize / (1024.0 * 1024.0))
-                        options.add(
-                            StreamOption(
-                                format = "MP3",
-                                quality = "Ses (MP3 - Yüksek Kalite)",
-                                sizeBytes = bestAudioSize,
-                                sizeFormatted = sizeMB,
-                                streamUrl = bestAudioUrl
-                            )
+                    val audioFormat = audioFormats.firstOrNull { it.optString("itag") == "140" }
+                        ?: audioFormats.maxByOrNull { it.optLong("clen", 0L) }
+                    val audioSize = audioFormat?.optLong("clen", 0L) ?: 0L
+                    options.add(
+                        StreamOption(
+                            format = "MP3",
+                            quality = "Ses (MP3 - Yüksek Kalite)",
+                            sizeBytes = audioSize,
+                            sizeFormatted = formatSize(audioSize),
+                            streamUrl = "$instance/latest_version?id=$videoId&itag=140"
                         )
-                    } else {
-                        // Fallback to Invidious latest_version direct audio endpoint
-                        val directAudioUrl = "$instance/latest_version?id=$videoId&itag=140"
-                        options.add(
-                            StreamOption(
-                                format = "MP3",
-                                quality = "Ses (MP3 - Yüksek Kalite)",
-                                sizeBytes = 4 * 1024 * 1024L,
-                                sizeFormatted = "4.2 MB",
-                                streamUrl = directAudioUrl
-                            )
-                        )
-                    }
+                    )
 
                     // 2. Video streams (MP4)
                     // A: formatStreams (muxed audio+video)
@@ -239,13 +197,12 @@ object YouTubeHelper {
                             val qLabel = vf.optString("qualityLabel", "Video")
                             val size = vf.optLong("size", 0L)
                             if (streamUrl.isNotEmpty() && options.none { it.quality == qLabel }) {
-                                val sizeMB = String.format("%.1f MB", size / (1024.0 * 1024.0))
                                 options.add(
                                     StreamOption(
                                         format = "MP4",
                                         quality = qLabel,
                                         sizeBytes = size,
-                                        sizeFormatted = sizeMB,
+                                        sizeFormatted = formatSize(size),
                                         streamUrl = streamUrl
                                     )
                                 )
@@ -267,13 +224,12 @@ object YouTubeHelper {
                             if (type.contains("video/mp4") && streamUrl.isNotEmpty() && qLabel.isNotEmpty()) {
                                 if (options.none { it.quality == qLabel && it.format == "MP4" }) {
                                     val clen = vf.optLong("clen", 0L)
-                                    val sizeMB = String.format("%.1f MB", clen / (1024.0 * 1024.0))
                                     options.add(
                                         StreamOption(
                                             format = "MP4",
                                             quality = qLabel,
                                             sizeBytes = clen,
-                                            sizeFormatted = sizeMB,
+                                            sizeFormatted = formatSize(clen),
                                             streamUrl = streamUrl
                                         )
                                     )
@@ -286,34 +242,63 @@ object YouTubeHelper {
                         return@withContext options
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                conn?.disconnect()
+            }
         }
 
-        // Fast fallback direct streams if all instances fail
-        if (options.isEmpty()) {
-            val fallbackAudio = "https://yt.chocolatemoo53.com/latest_version?id=$videoId&itag=140"
-            options.add(
-                StreamOption(
-                    format = "MP3",
-                    quality = "Ses (MP3 - Yüksek Kalite)",
-                    sizeBytes = 4 * 1024 * 1024L,
-                    sizeFormatted = "4.2 MB",
-                    streamUrl = fallbackAudio
-                )
-            )
-            options.add(
-                StreamOption(
-                    format = "MP4",
-                    quality = "720p HD",
-                    sizeBytes = 28 * 1024 * 1024L,
-                    sizeFormatted = "28.4 MB",
-                    streamUrl = "https://www.youtube.com/watch?v=$videoId"
-                )
-            )
-        }
-
-        return@withContext options
+        return@withContext emptyList()
     }
+
+    private fun getApiInstances(): List<String> {
+        val now = System.currentTimeMillis()
+        if (cachedInstances.isNotEmpty() && now - instanceCacheTime < INSTANCE_CACHE_MS) {
+            return cachedInstances
+        }
+
+        val candidates = mutableListOf<Pair<String, Double>>()
+        var conn: HttpURLConnection? = null
+        try {
+            conn = URL(INSTANCE_DIRECTORY_URL).openConnection() as HttpURLConnection
+            conn.connectTimeout = 1500
+            conn.readTimeout = 2500
+            conn.setRequestProperty("User-Agent", "KZBStube Android")
+            if (conn.responseCode == 200) {
+                val directory = JSONArray(conn.inputStream.bufferedReader().use { it.readText() })
+                for (i in 0 until directory.length()) {
+                    val entry = directory.optJSONArray(i) ?: continue
+                    val details = entry.optJSONObject(1) ?: continue
+                    if (!details.optBoolean("api", false) || details.optString("type") != "https") continue
+
+                    val monitor = details.optJSONObject("monitor")
+                    if (monitor?.optBoolean("down", false) == true) continue
+                    val uptime = monitor?.optDouble("uptime", 100.0) ?: 100.0
+                    if (uptime < 90.0) continue
+
+                    val uri = details.optString("uri").trimEnd('/')
+                    if (uri.startsWith("https://")) candidates.add(uri to uptime)
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            conn?.disconnect()
+        }
+
+        val instances = (candidates.sortedByDescending { it.second }.take(3).map { it.first } + FALLBACK_INSTANCE)
+            .distinct()
+        if (instances.isNotEmpty()) {
+            cachedInstances = instances
+            instanceCacheTime = now
+            return instances
+        }
+
+        return cachedInstances.ifEmpty { listOf(FALLBACK_INSTANCE) }
+    }
+
+    private fun formatSize(bytes: Long): String =
+        if (bytes > 0) String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+        else "Boyut indirirken alınacak"
 
     private fun fetchSingleVideoInfo(videoId: String): VideoItem? {
         return try {

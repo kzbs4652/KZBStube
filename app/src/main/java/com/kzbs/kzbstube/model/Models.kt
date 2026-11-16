@@ -45,10 +45,15 @@ data class DownloadItem(
 
     val speedFormatted: String
         get() {
+            val megabitsPerSecond = speedBytesPerSec * 8.0 / 1_000_000.0
             return if (speedBytesPerSec > 1024 * 1024) {
-                String.format("%.1f MB/s", speedBytesPerSec / (1024.0 * 1024.0))
+                String.format(
+                    "%.1f MB/s • %.1f Mbit/s",
+                    speedBytesPerSec / (1024.0 * 1024.0),
+                    megabitsPerSecond
+                )
             } else {
-                String.format("%.0f KB/s", speedBytesPerSec / 1024.0)
+                String.format("%.0f KB/s • %.1f Mbit/s", speedBytesPerSec / 1024.0, megabitsPerSecond)
             }
         }
 }

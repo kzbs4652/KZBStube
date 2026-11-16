@@ -1,7 +1,7 @@
 {
-  "latestVersionCode": 5,
-  "latestVersionName": "1.0.4",
-  "changelog": "• YouTube 25 KB/s hız frenini tamamen kaldıran parçalı Range indirme motoru\n• Kullanıcının tüm internet hızını kullanan yüksek hızlı indirme altyapısı\n• Hızlı Range önbellek ile 1 saniyenin altında açılan şarkı önizleme\n• İndirme ekranındaki yanıltıcı '82 MB' başlangıç metninin tamamen düzeltilmesi\n• Bildirim ve indirme ilerleme göstergelerinde gerçek megabayt ve hız takibi",
-  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.4.apk",
+  "latestVersionCode": 6,
+  "latestVersionName": "1.0.5",
+  "changelog": "• Önizleme oynatıcısına canlı saniye göstergeli kaydırma (SeekBar) barı eklendi\n• Önizleme çubuğuna 10 sn geri sarma, 10 sn ileri sarma ve kapatma (X) kontrolleri eklendi\n• Android durum çubuğunda canlı saniye ilerleme barı ve interaktif oynatıcı bildirimi eklendi\n• MP3 ve MP4 indirme motoru baştan sona tarandı, internet hızını tam kullanan altyapı optimize edildi",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.5.apk",
   "isMandatory": false
 }

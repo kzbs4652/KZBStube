@@ -15,32 +15,53 @@ import com.kzbs.kzbstube.R
 import com.kzbs.kzbstube.model.DownloadItem
 import com.kzbs.kzbstube.model.VideoItem
 import com.kzbs.kzbstube.ui.ActiveDownloadsActivity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
+import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicLong
 
 object DownloadManager {
 
     private const val PREFS_NAME = "kzbstube_prefs"
     private const val KEY_DOWNLOADS = "completed_downloads"
     const val KEY_CUSTOM_PATH = "custom_download_path"
-    private const val CHUNK_SIZE = 1024 * 1024L // 1 MB high-speed unthrottled chunks
+    private const val BUFFER_SIZE = 128 * 1024
+    private const val MAX_PARALLEL_RANGES = 3
+    private const val MIN_PARALLEL_BYTES = 3 * 1024 * 1024L
+    private const val MIN_RANGE_BYTES = 1024 * 1024L
+    private const val USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36"
 
     val activeDownloads = mutableListOf<DownloadItem>()
     val completedDownloads = mutableListOf<DownloadItem>()
     private val downloadJobs = mutableMapOf<String, Job>()
 
     var onProgressUpdate: (() -> Unit)? = null
+
+    private data class ByteRange(val start: Long, val end: Long)
+
+    private class ProgressTracker {
+        var lastSampleTime = System.currentTimeMillis()
+        var lastSampleBytes = 0L
+        var lastNotificationTime = 0L
+    }
 
     init {
         loadCompleted()
@@ -80,11 +101,6 @@ object DownloadManager {
         prefs.edit().putString(KEY_DOWNLOADS, json).apply()
     }
 
-    /**
-     * Downloads real media files at the user's FULL internet bandwidth using
-     * HTTP Range Chunking (Segmented Downloader).
-     * Bypasses YouTube's 25 KB/s playback throttle completely.
-     */
     fun startDownload(
         video: VideoItem,
         format: String,
@@ -98,10 +114,12 @@ object DownloadManager {
         if (!downloadFolder.exists()) downloadFolder.mkdirs()
 
         val targetFile = File(downloadFolder, "$cleanTitle.$ext")
+        val itemId = "${video.id}_${System.currentTimeMillis()}"
+        val tempFile = File(downloadFolder, ".$cleanTitle-${itemId.hashCode()}.$ext.part")
         val notifId = (video.id + "_" + System.currentTimeMillis()).hashCode()
 
         val item = DownloadItem(
-            id = "${video.id}_${System.currentTimeMillis()}",
+            id = itemId,
             videoId = video.id,
             title = video.title,
             author = video.author,
@@ -109,7 +127,7 @@ object DownloadManager {
             format = if (ext == "mp3") "MP3" else "MP4",
             quality = quality,
             filePath = targetFile.absolutePath,
-            totalBytes = if (totalSizeBytes > 0) totalSizeBytes else 5 * 1024 * 1024L
+            totalBytes = totalSizeBytes.coerceAtLeast(0L)
         )
 
         activeDownloads.add(0, item)
@@ -117,7 +135,6 @@ object DownloadManager {
 
         val context = KZBStubeApp.appContext
         val notifManager = NotificationManagerCompat.from(context)
-
         val openDownloadsIntent = Intent(context, ActiveDownloadsActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -129,143 +146,87 @@ object DownloadManager {
         )
 
         val job = CoroutineScope(Dispatchers.IO).launch {
-            var fileOutput: FileOutputStream? = null
-            var bufferedOutput: BufferedOutputStream? = null
+            val tracker = ProgressTracker()
 
-            try {
-                var finalUrl = streamUrl
-                var realTotalBytes = totalSizeBytes
+            suspend fun reportProgress(bytes: Long) {
+                val now = System.currentTimeMillis()
+                var updateUi = false
+                var updateNotification = false
+                var percent = 0
+                var speedText = ""
 
-                // Resolve any redirect to get direct CDN URL and exact content length
-                try {
-                    var headConn = URL(finalUrl).openConnection() as HttpURLConnection
-                    headConn.requestMethod = "HEAD"
-                    headConn.connectTimeout = 8000
-                    headConn.readTimeout = 8000
-                    headConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                    headConn.instanceFollowRedirects = true
-                    headConn.connect()
-
-                    if (headConn.responseCode in listOf(301, 302, 303, 307, 308)) {
-                        val loc = headConn.getHeaderField("Location")
-                        if (!loc.isNullOrEmpty()) {
-                            finalUrl = loc
-                        }
+                synchronized(tracker) {
+                    item.downloadedBytes = maxOf(item.downloadedBytes, bytes)
+                    val elapsed = now - tracker.lastSampleTime
+                    if (elapsed >= 300) {
+                        val diff = item.downloadedBytes - tracker.lastSampleBytes
+                        item.speedBytesPerSec = diff / (elapsed / 1000.0)
+                        tracker.lastSampleBytes = item.downloadedBytes
+                        tracker.lastSampleTime = now
+                        updateUi = true
                     }
-
-                    val cl = headConn.contentLengthLong
-                    if (cl > 0) {
-                        realTotalBytes = cl
-                        item.totalBytes = cl
+                    if (KZBStubeApp.areNotificationsEnabled() && now - tracker.lastNotificationTime > 700) {
+                        tracker.lastNotificationTime = now
+                        percent = if (item.totalBytes > 0) {
+                            ((item.downloadedBytes * 100) / item.totalBytes).toInt().coerceIn(0, 100)
+                        } else 0
+                        speedText = item.speedFormatted
+                        updateNotification = true
                     }
-                    headConn.disconnect()
-                } catch (_: Exception) {}
-
-                fileOutput = FileOutputStream(targetFile)
-                bufferedOutput = BufferedOutputStream(fileOutput, 65536)
-
-                val buffer = ByteArray(65536)
-                var downloaded = 0L
-                var lastTime = System.currentTimeMillis()
-                var lastBytes = 0L
-                var lastNotifTime = 0L
-
-                // If real total bytes is known, use High-Speed Range Chunking
-                if (realTotalBytes > 0) {
-                    while (downloaded < realTotalBytes && !item.isCompleted) {
-                        if (item.isPaused) {
-                            while (item.isPaused) { delay(400) }
-                        }
-
-                        val end = minOf(downloaded + CHUNK_SIZE - 1, realTotalBytes - 1)
-                        val chunkConn = URL(finalUrl).openConnection() as HttpURLConnection
-                        chunkConn.connectTimeout = 12000
-                        chunkConn.readTimeout = 25000
-                        chunkConn.setRequestProperty(
-                            "User-Agent",
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                        )
-                        chunkConn.setRequestProperty("Accept", "*/*")
-                        chunkConn.setRequestProperty("Range", "bytes=$downloaded-$end")
-                        chunkConn.setRequestProperty("Connection", "keep-alive")
-                        chunkConn.connect()
-
-                        val code = chunkConn.responseCode
-                        if (code == 206 || code == 200) {
-                            val input = BufferedInputStream(chunkConn.inputStream, 65536)
-                            var bytesRead: Int
-                            while (input.read(buffer).also { bytesRead = it } != -1) {
-                                if (item.isPaused) {
-                                    while (item.isPaused) { delay(400) }
-                                }
-                                bufferedOutput.write(buffer, 0, bytesRead)
-                                downloaded += bytesRead
-                                item.downloadedBytes = downloaded
-
-                                val now = System.currentTimeMillis()
-                                val diff = now - lastTime
-                                if (diff >= 300) {
-                                    val byteDiff = downloaded - lastBytes
-                                    item.speedBytesPerSec = (byteDiff / (diff / 1000.0))
-                                    lastBytes = downloaded
-                                    lastTime = now
-                                    withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
-                                }
-
-                                if (KZBStubeApp.areNotificationsEnabled() && now - lastNotifTime > 600) {
-                                    lastNotifTime = now
-                                    val percent = ((item.downloadedBytes * 100) / item.totalBytes).toInt().coerceIn(0, 100)
-                                    val speedFormatted = if (item.speedBytesPerSec > 1024 * 1024) {
-                                        String.format("%.1f MB/s", item.speedBytesPerSec / (1024 * 1024))
-                                    } else {
-                                        String.format("%.0f KB/s", item.speedBytesPerSec / 1024)
-                                    }
-                                    try {
-                                        val notif = NotificationCompat.Builder(context, KZBStubeApp.NOTIF_CHANNEL_ID)
-                                            .setSmallIcon(R.drawable.ic_kzbs_logo)
-                                            .setContentTitle(item.title)
-                                            .setContentText("%$percent • $speedFormatted")
-                                            .setProgress(100, percent, false)
-                                            .setOngoing(true)
-                                            .setOnlyAlertOnce(true)
-                                            .setContentIntent(openDownloadsPending)
-                                            .build()
-                                        notifManager.notify(notifId, notif)
-                                    } catch (_: SecurityException) {}
-                                }
-                            }
-                            input.close()
-                            chunkConn.disconnect()
-
-                            // If server returned 200 (full file), we received everything
-                            if (code == 200 && downloaded >= realTotalBytes) break
-                        } else {
-                            // Fallback to standard streaming if range fails
-                            break
-                        }
-                    }
-                } else {
-                    // Fallback continuous stream
-                    val conn = URL(finalUrl).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 12000
-                    conn.readTimeout = 25000
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-                    conn.connect()
-                    val input = BufferedInputStream(conn.inputStream, 65536)
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        bufferedOutput.write(buffer, 0, bytesRead)
-                        downloaded += bytesRead
-                        item.downloadedBytes = downloaded
-                        withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
-                    }
-                    input.close()
-                    conn.disconnect()
                 }
 
-                bufferedOutput.flush()
+                if (updateUi) withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
+                if (updateNotification) {
+                    try {
+                        val notification = NotificationCompat.Builder(context, KZBStubeApp.NOTIF_CHANNEL_ID)
+                            .setSmallIcon(R.drawable.ic_kzbs_logo)
+                            .setContentTitle(item.title)
+                            .setContentText("%$percent • $speedText")
+                            .setProgress(100, percent, false)
+                            .setOngoing(true)
+                            .setOnlyAlertOnce(true)
+                            .setContentIntent(openDownloadsPending)
+                            .build()
+                        notifManager.notify(notifId, notification)
+                    } catch (_: SecurityException) {}
+                }
+            }
 
-                // Register with Android Media Scanner
+            fun resetProgress() {
+                synchronized(tracker) {
+                    item.downloadedBytes = 0L
+                    item.speedBytesPerSec = 0.0
+                    tracker.lastSampleBytes = 0L
+                    tracker.lastSampleTime = System.currentTimeMillis()
+                }
+            }
+
+            try {
+                val downloadedBytes = downloadMedia(
+                    item = item,
+                    sourceUrl = streamUrl,
+                    providedTotalBytes = totalSizeBytes,
+                    tempFile = tempFile,
+                    resetProgress = ::resetProgress,
+                    reportProgress = ::reportProgress
+                )
+
+                if (downloadedBytes <= 0L || (item.totalBytes > 0 && downloadedBytes != item.totalBytes)) {
+                    throw IOException("İndirme tamamlanmadan bağlantı kapandı")
+                }
+                if (item.totalBytes <= 0L) item.totalBytes = downloadedBytes
+                if (tempFile.length() != downloadedBytes) {
+                    throw IOException("İndirilen dosyanın boyutu doğrulanamadı")
+                }
+
+                if (targetFile.exists() && !targetFile.delete()) {
+                    throw IOException("Eski dosya değiştirilemedi")
+                }
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+
                 val mime = if (ext == "mp3") "audio/mpeg" else "video/mp4"
                 MediaScannerConnection.scanFile(
                     KZBStubeApp.appContext,
@@ -275,13 +236,13 @@ object DownloadManager {
                 )
 
                 item.isCompleted = true
+                item.downloadedBytes = downloadedBytes
                 item.speedBytesPerSec = 0.0
                 activeDownloads.remove(item)
                 completedDownloads.add(0, item)
                 saveCompleted()
                 withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
 
-                // Completion notification with click-to-play
                 if (KZBStubeApp.areNotificationsEnabled()) {
                     try {
                         val fileUri = FileProvider.getUriForFile(
@@ -300,8 +261,7 @@ object DownloadManager {
                             viewIntent,
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                         )
-
-                        val completeNotif = NotificationCompat.Builder(context, KZBStubeApp.NOTIF_CHANNEL_ID)
+                        val completeNotification = NotificationCompat.Builder(context, KZBStubeApp.NOTIF_CHANNEL_ID)
                             .setSmallIcon(R.drawable.ic_kzbs_logo)
                             .setContentTitle("İndirme Tamamlandı")
                             .setContentText(item.title)
@@ -309,22 +269,239 @@ object DownloadManager {
                             .setAutoCancel(true)
                             .setContentIntent(viewPending)
                             .build()
-                        notifManager.notify(notifId, completeNotif)
+                        notifManager.notify(notifId, completeNotification)
                     } catch (_: Exception) {}
                 }
-
+            } catch (e: CancellationException) {
+                tempFile.delete()
+                activeDownloads.remove(item)
+                try { notifManager.cancel(notifId) } catch (_: Exception) {}
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
+                tempFile.delete()
                 activeDownloads.remove(item)
                 try { notifManager.cancel(notifId) } catch (_: Exception) {}
                 withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
             } finally {
-                try { bufferedOutput?.close() } catch (_: Exception) {}
-                try { fileOutput?.close() } catch (_: Exception) {}
+                downloadJobs.remove(item.id)
             }
         }
 
         downloadJobs[item.id] = job
+    }
+
+    private suspend fun downloadMedia(
+        item: DownloadItem,
+        sourceUrl: String,
+        providedTotalBytes: Long,
+        tempFile: File,
+        resetProgress: () -> Unit,
+        reportProgress: suspend (Long) -> Unit
+    ): Long {
+        var probe: HttpURLConnection? = null
+        try {
+            probe = createConnection(sourceUrl, "bytes=0-0")
+            val responseCode = probe.responseCode
+
+            if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
+                val finalUrl = probe.url.toString()
+                val rangeTotal = contentRangeTotal(probe.getHeaderField("Content-Range"))
+                val totalBytes = rangeTotal.takeIf { it > 0L } ?: providedTotalBytes
+                if (totalBytes > 0L) item.totalBytes = totalBytes
+                try { probe.inputStream.close() } catch (_: Exception) {}
+                probe.disconnect()
+                probe = null
+
+                if (totalBytes >= MIN_PARALLEL_BYTES) {
+                    try {
+                        return downloadParallelRanges(finalUrl, totalBytes, tempFile, item, reportProgress)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Some CDNs accept the initial range probe but reject concurrent ranges.
+                        tempFile.delete()
+                        resetProgress()
+                        return downloadSequential(sourceUrl, totalBytes, tempFile, item, reportProgress)
+                    }
+                }
+                return downloadSequential(sourceUrl, totalBytes, tempFile, item, reportProgress)
+            }
+
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                val responseTotal = probe.contentLengthLong.takeIf { it > 0L } ?: providedTotalBytes
+                if (responseTotal > 0L) item.totalBytes = responseTotal
+                val input = BufferedInputStream(probe.inputStream, BUFFER_SIZE)
+                return copyToFile(input, tempFile, item, reportProgress)
+            }
+
+            probe.disconnect()
+            probe = null
+            return downloadSequential(sourceUrl, providedTotalBytes, tempFile, item, reportProgress)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            tempFile.delete()
+            resetProgress()
+            return downloadSequential(sourceUrl, providedTotalBytes, tempFile, item, reportProgress)
+        } finally {
+            probe?.disconnect()
+        }
+    }
+
+    private suspend fun downloadParallelRanges(
+        url: String,
+        totalBytes: Long,
+        tempFile: File,
+        item: DownloadItem,
+        reportProgress: suspend (Long) -> Unit
+    ): Long {
+        val workerCount = minOf(
+            MAX_PARALLEL_RANGES,
+            ((totalBytes + MIN_RANGE_BYTES - 1) / MIN_RANGE_BYTES).toInt().coerceAtLeast(1)
+        )
+        val segmentSize = (totalBytes + workerCount - 1) / workerCount
+        val ranges = mutableListOf<ByteRange>()
+        var start = 0L
+        while (start < totalBytes) {
+            val end = minOf(start + segmentSize - 1, totalBytes - 1)
+            ranges.add(ByteRange(start, end))
+            start = end + 1
+        }
+
+        RandomAccessFile(tempFile, "rw").use {
+            it.setLength(0L)
+            it.setLength(totalBytes)
+        }
+        val downloaded = AtomicLong(0L)
+
+        coroutineScope {
+            ranges.map { range ->
+                async(Dispatchers.IO) {
+                    val connection = createConnection(url, "bytes=${range.start}-${range.end}")
+                    try {
+                        if (connection.responseCode != HttpURLConnection.HTTP_PARTIAL) {
+                            throw IOException("Sunucu paralel aralık isteğini kabul etmedi")
+                        }
+                        validateContentRange(connection.getHeaderField("Content-Range"), range, totalBytes)
+
+                        val input = BufferedInputStream(connection.inputStream, BUFFER_SIZE)
+                        val randomFile = RandomAccessFile(tempFile, "rw")
+                        try {
+                            val buffer = ByteArray(BUFFER_SIZE)
+                            var position = range.start
+                            var remaining = range.end - range.start + 1
+                            while (remaining > 0L) {
+                                currentCoroutineContext().ensureActive()
+                                while (item.isPaused) {
+                                    delay(250)
+                                    currentCoroutineContext().ensureActive()
+                                }
+                                val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                                if (count < 0) throw IOException("Aralık eksik indirildi")
+                                randomFile.seek(position)
+                                randomFile.write(buffer, 0, count)
+                                position += count
+                                remaining -= count
+                                reportProgress(downloaded.addAndGet(count.toLong()))
+                            }
+                        } finally {
+                            input.close()
+                            randomFile.close()
+                        }
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+            }.awaitAll()
+        }
+
+        val bytes = downloaded.get()
+        if (bytes != totalBytes) throw IOException("Paralel indirme eksik kaldı")
+        return bytes
+    }
+
+    private suspend fun downloadSequential(
+        url: String,
+        providedTotalBytes: Long,
+        tempFile: File,
+        item: DownloadItem,
+        reportProgress: suspend (Long) -> Unit
+    ): Long {
+        val connection = createConnection(url)
+        try {
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                throw IOException("İndirme sunucusu HTTP $responseCode yanıtı verdi")
+            }
+            val totalBytes = contentRangeTotal(connection.getHeaderField("Content-Range"))
+                .takeIf { it > 0L }
+                ?: connection.contentLengthLong.takeIf { it > 0L }
+                ?: providedTotalBytes
+            if (totalBytes > 0L) item.totalBytes = totalBytes
+            val input = BufferedInputStream(connection.inputStream, BUFFER_SIZE)
+            return copyToFile(input, tempFile, item, reportProgress)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private suspend fun copyToFile(
+        input: BufferedInputStream,
+        tempFile: File,
+        item: DownloadItem,
+        reportProgress: suspend (Long) -> Unit
+    ): Long {
+        var downloaded = 0L
+        val output = BufferedOutputStream(FileOutputStream(tempFile, false), BUFFER_SIZE)
+        try {
+            val buffer = ByteArray(BUFFER_SIZE)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                while (item.isPaused) {
+                    delay(250)
+                    currentCoroutineContext().ensureActive()
+                }
+                val count = input.read(buffer)
+                if (count < 0) break
+                output.write(buffer, 0, count)
+                downloaded += count
+                reportProgress(downloaded)
+            }
+            output.flush()
+            return downloaded
+        } finally {
+            try { input.close() } catch (_: Exception) {}
+            output.close()
+        }
+    }
+
+    private fun createConnection(url: String, rangeHeader: String? = null): HttpURLConnection {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = 12000
+        connection.readTimeout = 25000
+        connection.instanceFollowRedirects = true
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        connection.setRequestProperty("Accept", "*/*")
+        if (rangeHeader != null) connection.setRequestProperty("Range", rangeHeader)
+        return connection
+    }
+
+    private fun contentRangeTotal(header: String?): Long {
+        if (header.isNullOrBlank()) return 0L
+        return header.substringAfterLast('/', "").toLongOrNull() ?: 0L
+    }
+
+    private fun validateContentRange(header: String?, expected: ByteRange, totalBytes: Long) {
+        if (header.isNullOrBlank()) throw IOException("Sunucu Content-Range başlığı döndürmedi")
+        val match = Regex("bytes\\s+(\\d+)-(\\d+)/(\\d+)", RegexOption.IGNORE_CASE).find(header)
+            ?: throw IOException("Sunucu geçersiz Content-Range başlığı döndürdü")
+        val start = match.groupValues[1].toLong()
+        val end = match.groupValues[2].toLong()
+        val total = match.groupValues[3].toLong()
+        if (start != expected.start || end != expected.end || total != totalBytes) {
+            throw IOException("Sunucu farklı bir veri aralığı döndürdü")
+        }
     }
 
     fun pauseDownload(id: String) {
