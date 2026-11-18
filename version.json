@@ -1,7 +1,7 @@
 {
-  "latestVersionCode": 6,
-  "latestVersionName": "1.0.5",
-  "changelog": "• Önizleme oynatıcısına canlı saniye göstergeli kaydırma (SeekBar) barı eklendi\n• Önizleme çubuğuna 10 sn geri sarma, 10 sn ileri sarma ve kapatma (X) kontrolleri eklendi\n• Android durum çubuğunda canlı saniye ilerleme barı ve interaktif oynatıcı bildirimi eklendi\n• MP3 ve MP4 indirme motoru baştan sona tarandı, internet hızını tam kullanan altyapı optimize edildi",
-  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.5.apk",
+  "latestVersionCode": 7,
+  "latestVersionName": "1.0.6",
+  "changelog": "• Açılış beklemesi azaltıldı\n• İndirmeler kalıcı arka plan işlerine taşındı\n• Akış sunucuları paralel deneniyor ve dosya biçimleri doğrulanıyor\n• İndirme hataları daha anlaşılır gösteriliyor",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.6.apk",
   "isMandatory": false
 }

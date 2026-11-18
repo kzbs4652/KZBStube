@@ -90,7 +90,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_search_box"
-                android:text="🎵 Müzik (MP3)"
+                android:text="🎵 Müzik (M4A)"
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -102,6 +102,17 @@
             android:layout_gravity="center"
             android:layout_marginTop="32dp"
             android:indeterminateTint="@color/kzbs_red" />
+
+        <TextView
+            android:id="@+id/tvSearchMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="24dp"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:visibility="gone" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvVideos"

@@ -54,7 +54,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="24dp" />
 
-            <!-- Format Selector (MP4 vs MP3 Mode) -->
+            <!-- Format Selector (MP4 vs M4A Mode) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="44dp"
@@ -80,7 +80,7 @@
                     android:layout_marginStart="6dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_search_box"
-                    android:text="🎵 Müzik (MP3)"
+                    android:text="🎵 Müzik (M4A)"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
             </LinearLayout>

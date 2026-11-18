@@ -1,6 +1,7 @@
 package com.kzbs.kzbstube.ui
 
 import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -25,8 +26,11 @@ class SettingsFragment : Fragment() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         if (uri != null) {
-            val path = uri.path ?: ""
-            DownloadManager.setCustomDownloadDirectory(path)
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                requireContext().contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (_: SecurityException) {}
+            DownloadManager.setCustomDownloadDirectory(uri.toString())
             updateFolderText()
             Toast.makeText(requireContext(), "İndirme klasörü güncellendi.", Toast.LENGTH_SHORT).show()
         }
@@ -81,16 +85,12 @@ class SettingsFragment : Fragment() {
         binding.llFolder.setOnClickListener {
             AlertDialog.Builder(requireContext())
                 .setTitle("İndirme Klasörü")
-                .setMessage("Mevcut Konum:\n${DownloadManager.getDownloadDirectory().absolutePath}\n\nFarklı bir klasör seçmek ister misiniz?")
+                .setMessage("Mevcut Konum:\n${DownloadManager.getDownloadDirectoryLabel()}\n\nFarklı bir klasör seçmek ister misiniz?")
                 .setPositiveButton("Klasör Seç") { _, _ ->
                     folderPickerLauncher.launch(null)
                 }
                 .setNeutralButton("Varsayılana Sıfırla (Download)") { _, _ ->
-                    DownloadManager.setCustomDownloadDirectory(
-                        android.os.Environment.getExternalStoragePublicDirectory(
-                            android.os.Environment.DIRECTORY_DOWNLOADS
-                        ).absolutePath
-                    )
+                    DownloadManager.clearCustomDownloadDirectory()
                     updateFolderText()
                     Toast.makeText(requireContext(), "Download klasörüne sıfırlandı.", Toast.LENGTH_SHORT).show()
                 }
@@ -115,8 +115,7 @@ class SettingsFragment : Fragment() {
     }
 
     private fun updateFolderText() {
-        val dir = DownloadManager.getDownloadDirectory()
-        binding.tvFolderSubtitle.text = dir.absolutePath
+        binding.tvFolderSubtitle.text = DownloadManager.getDownloadDirectoryLabel()
     }
 
     private fun updateThemeText() {

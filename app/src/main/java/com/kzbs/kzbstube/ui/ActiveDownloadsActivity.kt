@@ -1,6 +1,7 @@
 package com.kzbs.kzbstube.ui
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.kzbs.kzbstube.databinding.ActivityActiveDownloadsBinding
 import com.kzbs.kzbstube.downloader.DownloadManager
@@ -38,6 +39,10 @@ class ActiveDownloadsActivity : AppCompatActivity() {
                 }
             }
         }
+        DownloadManager.onDownloadFailure = { failedTitle, message ->
+            Toast.makeText(this, "$failedTitle: $message", Toast.LENGTH_LONG).show()
+            finish()
+        }
 
         binding.btnPause.setOnClickListener {
             val current = DownloadManager.activeDownloads.firstOrNull() ?: return@setOnClickListener
@@ -58,5 +63,6 @@ class ActiveDownloadsActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         DownloadManager.onProgressUpdate = null
+        DownloadManager.onDownloadFailure = null
     }
 }

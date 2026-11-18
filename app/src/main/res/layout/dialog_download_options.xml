@@ -35,6 +35,16 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
+    <Button
+        android:id="@+id/btnRetryOptions"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_search_box"
+        android:text="Tekrar Dene"
+        android:textColor="@color/text_primary"
+        android:visibility="gone" />
+
     <RadioGroup
         android:id="@+id/rgRealOptions"
         android:layout_width="match_parent"

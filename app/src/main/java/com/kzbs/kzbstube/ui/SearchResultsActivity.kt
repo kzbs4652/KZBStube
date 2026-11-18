@@ -31,6 +31,7 @@ import com.kzbs.kzbstube.downloader.DownloadManager
 import com.kzbs.kzbstube.downloader.YouTubeHelper
 import com.kzbs.kzbstube.model.VideoItem
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -48,13 +49,16 @@ class SearchResultsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySearchResultsBinding
     private val videoList = mutableListOf<VideoItem>()
     private lateinit var adapter: VideoAdapter
-    private var currentMode = "MP4" // "MP4" or "MP3"
+    private var currentMode = "MP4" // "MP4" or "M4A"
     private var mediaPlayer: MediaPlayer? = null
     private var isPlayingAudio = false
     private var activePreviewVideoId: String? = null
     private var currentPlayingVideo: VideoItem? = null
     private var isUserSeeking = false
     private var progressJob: Job? = null
+    private var previewResolveJob: Job? = null
+    private var searchJob: Job? = null
+    private var searchSequence = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,7 +66,7 @@ class SearchResultsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         val query = intent.getStringExtra("QUERY") ?: "mavi espor"
-        currentMode = intent.getStringExtra("MODE") ?: "MP4"
+        currentMode = intent.getStringExtra("MODE")?.let { if (it == "MP3") "M4A" else it } ?: "MP4"
 
         updateModeButtons()
 
@@ -70,14 +74,14 @@ class SearchResultsActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
         binding.btnClear.setOnClickListener { binding.etTopSearch.setText("") }
 
-        // Mode toggling (MP4 / MP3)
+        // Mode toggling (MP4 / M4A)
         binding.btnResultModeVideo.setOnClickListener {
             currentMode = "MP4"
             updateModeButtons()
         }
 
         binding.btnResultModeAudio.setOnClickListener {
-            currentMode = "MP3"
+            currentMode = "M4A"
             updateModeButtons()
         }
 
@@ -112,6 +116,8 @@ class SearchResultsActivity : AppCompatActivity() {
         }
 
         binding.btnMiniClose.setOnClickListener {
+            previewResolveJob?.cancel()
+            previewResolveJob = null
             stopAudio()
             binding.llMiniPlayer.visibility = View.GONE
             dismissPreviewNotification()
@@ -154,6 +160,8 @@ class SearchResultsActivity : AppCompatActivity() {
         }
         PreviewController.onClose = {
             runOnUiThread {
+                previewResolveJob?.cancel()
+                previewResolveJob = null
                 stopAudio()
                 binding.llMiniPlayer.visibility = View.GONE
                 dismissPreviewNotification()
@@ -231,13 +239,31 @@ class SearchResultsActivity : AppCompatActivity() {
     }
 
     private fun performSearch(query: String) {
+        val requestSequence = ++searchSequence
+        searchJob?.cancel()
+        binding.tvSearchMessage.visibility = View.GONE
         binding.progressBar.visibility = View.VISIBLE
-        lifecycleScope.launch {
-            val results = YouTubeHelper.searchVideos(query)
-            videoList.clear()
-            videoList.addAll(results)
-            adapter.notifyDataSetChanged()
-            binding.progressBar.visibility = View.GONE
+        searchJob = lifecycleScope.launch {
+            try {
+                val results = YouTubeHelper.searchVideos(query)
+                if (requestSequence != searchSequence) return@launch
+                videoList.clear()
+                videoList.addAll(results)
+                adapter.notifyDataSetChanged()
+                if (results.isEmpty()) {
+                    binding.tvSearchMessage.text = "Sonuç bulunamadı. Arama kelimesini veya YouTube bağlantısını kontrol edin."
+                    binding.tvSearchMessage.visibility = View.VISIBLE
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (requestSequence == searchSequence) {
+                    binding.tvSearchMessage.text = "Arama tamamlanamadı. Lütfen tekrar deneyin."
+                    binding.tvSearchMessage.visibility = View.VISIBLE
+                }
+            } finally {
+                if (requestSequence == searchSequence) binding.progressBar.visibility = View.GONE
+            }
         }
     }
 
@@ -249,6 +275,8 @@ class SearchResultsActivity : AppCompatActivity() {
      * Starts audio preview in mini player and shows interactive status bar notification
      */
     private fun playAudioInApp(video: VideoItem) {
+        previewResolveJob?.cancel()
+        previewResolveJob = null
         stopAudio()
         activePreviewVideoId = video.id
         currentPlayingVideo = video
@@ -263,7 +291,7 @@ class SearchResultsActivity : AppCompatActivity() {
 
         Glide.with(this).load(video.thumbnailUrl).into(binding.ivMiniThumb)
 
-        lifecycleScope.launch {
+        previewResolveJob = lifecycleScope.launch {
             val cacheFile = File(cacheDir, "preview_${video.id}.m4a")
 
             // If already cached locally, play instantly (0ms)
@@ -273,15 +301,15 @@ class SearchResultsActivity : AppCompatActivity() {
             }
 
             binding.tvMiniStatus.text = "Ses akışı aranıyor..."
-            val streams = YouTubeHelper.resolveStreams(video.id)
-            val audioOpt = streams.firstOrNull { it.format == "MP3" } ?: streams.firstOrNull()
+            val resolution = YouTubeHelper.resolveStreams(video.id, requiredFormat = "M4A")
+            if (activePreviewVideoId != video.id) return@launch
+            val audioOpt = resolution.options.firstOrNull { it.format == "M4A" }
 
             if (audioOpt != null && audioOpt.streamUrl.startsWith("http")) {
-                if (activePreviewVideoId != video.id) return@launch
                 binding.tvMiniStatus.text = "Yükleniyor..."
                 playStreamDirect(audioOpt.streamUrl)
             } else {
-                binding.tvMiniStatus.text = "Ses akışı bulunamadı"
+                binding.tvMiniStatus.text = resolution.errorMessage ?: "Ses akışı bulunamadı"
             }
         }
     }
@@ -477,6 +505,7 @@ class SearchResultsActivity : AppCompatActivity() {
         val tvTitle = view.findViewById<TextView>(R.id.tvOptionTitle)
         val pbLoading = view.findViewById<ProgressBar>(R.id.pbOptionsLoading)
         val tvLabel = view.findViewById<TextView>(R.id.tvOptionsLabel)
+        val btnRetry = view.findViewById<Button>(R.id.btnRetryOptions)
         val rgOptions = view.findViewById<RadioGroup>(R.id.rgRealOptions)
         val btnStart = view.findViewById<Button>(R.id.btnStartDownload)
 
@@ -486,62 +515,90 @@ class SearchResultsActivity : AppCompatActivity() {
             .setView(view)
             .create()
 
-        dialog.show()
-        lifecycleScope.launch {
-            val streams = YouTubeHelper.resolveStreams(video.id)
+        var resolveJob: Job? = null
+        fun loadOptions(forceRefresh: Boolean = false) {
+            resolveJob?.cancel()
+            pbLoading.visibility = View.VISIBLE
+            tvLabel.visibility = View.GONE
+            rgOptions.visibility = View.GONE
+            btnRetry.visibility = View.GONE
+            btnStart.visibility = View.GONE
 
-            val filteredStreams = streams.filter {
-                if (currentMode == "MP3") it.format == "MP3" else it.format == "MP4"
-            }
-
-            pbLoading.visibility = View.GONE
-            tvLabel.visibility = View.VISIBLE
-            if (filteredStreams.isEmpty()) {
-                tvLabel.text = "İndirme bağlantısı bulunamadı. Biraz sonra tekrar dene."
-                rgOptions.visibility = View.GONE
-                btnStart.visibility = View.GONE
-                return@launch
-            }
-            btnStart.visibility = View.VISIBLE
-
-            rgOptions.visibility = View.VISIBLE
-            rgOptions.removeAllViews()
-            filteredStreams.forEachIndexed { index, opt ->
-                val rb = RadioButton(this@SearchResultsActivity).apply {
-                    id = index + 100
-                    text = "${opt.quality}  •  ${opt.sizeFormatted}"
-                    setTextColor(resources.getColor(R.color.text_primary, null))
-                    textSize = 14f
-                    isChecked = index == 0
-                }
-                rgOptions.addView(rb)
-            }
-
-            btnStart.setOnClickListener {
-                val selectedIndex = rgOptions.checkedRadioButtonId - 100
-                val selectedOpt = filteredStreams.getOrNull(selectedIndex) ?: filteredStreams.first()
-
-                DownloadManager.startDownload(
-                    video = video,
-                    format = selectedOpt.format,
-                    quality = selectedOpt.quality,
-                    streamUrl = selectedOpt.streamUrl,
-                    totalSizeBytes = selectedOpt.sizeBytes
+            resolveJob = lifecycleScope.launch {
+                val resolution = YouTubeHelper.resolveStreams(
+                    video.id,
+                    requiredFormat = currentMode,
+                    forceRefresh = forceRefresh
                 )
+                if (!dialog.isShowing || isFinishing) return@launch
 
-                dialog.dismiss()
-
-                val intent = Intent(this@SearchResultsActivity, ActiveDownloadsActivity::class.java).apply {
-                    putExtra("TITLE", video.title)
-                    putExtra("FORMAT", "${selectedOpt.format} • ${selectedOpt.quality}")
+                val filteredStreams = resolution.options.filter {
+                    if (currentMode == "M4A") it.format == "M4A" else it.format == "MP4"
                 }
-                startActivity(intent)
+
+                pbLoading.visibility = View.GONE
+                tvLabel.visibility = View.VISIBLE
+                if (filteredStreams.isEmpty()) {
+                    tvLabel.text = if (resolution.errorMessage != null) {
+                        resolution.errorMessage
+                    } else {
+                        "Bu biçim için indirme akışı bulunamadı."
+                    }
+                    rgOptions.visibility = View.GONE
+                    btnStart.visibility = View.GONE
+                    btnRetry.visibility = View.VISIBLE
+                    btnRetry.setOnClickListener { loadOptions(forceRefresh = true) }
+                    return@launch
+                }
+
+                tvLabel.text = "İndirilecek kaliteyi seçin:"
+                btnRetry.visibility = View.GONE
+                btnStart.visibility = View.VISIBLE
+                rgOptions.visibility = View.VISIBLE
+                rgOptions.removeAllViews()
+                filteredStreams.forEachIndexed { index, opt ->
+                    val rb = RadioButton(this@SearchResultsActivity).apply {
+                        id = index + 100
+                        text = "${opt.quality}  •  ${opt.sizeFormatted}"
+                        setTextColor(resources.getColor(R.color.text_primary, null))
+                        textSize = 14f
+                        isChecked = index == 0
+                    }
+                    rgOptions.addView(rb)
+                }
+
+                btnStart.setOnClickListener {
+                    val selectedIndex = rgOptions.checkedRadioButtonId - 100
+                    val selectedOpt = filteredStreams.getOrNull(selectedIndex) ?: filteredStreams.first()
+
+                    DownloadManager.startDownload(
+                        video = video,
+                        format = selectedOpt.format,
+                        quality = selectedOpt.quality,
+                        streamUrl = selectedOpt.streamUrl,
+                        totalSizeBytes = selectedOpt.sizeBytes
+                    )
+
+                    dialog.dismiss()
+
+                    val intent = Intent(this@SearchResultsActivity, ActiveDownloadsActivity::class.java).apply {
+                        putExtra("TITLE", video.title)
+                        putExtra("FORMAT", "${selectedOpt.format} • ${selectedOpt.quality}")
+                    }
+                    startActivity(intent)
+                }
             }
         }
+
+        dialog.setOnDismissListener { resolveJob?.cancel() }
+        dialog.show()
+        loadOptions()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        previewResolveJob?.cancel()
+        searchJob?.cancel()
         stopAudio()
         dismissPreviewNotification()
         PreviewController.onPlayPause = null

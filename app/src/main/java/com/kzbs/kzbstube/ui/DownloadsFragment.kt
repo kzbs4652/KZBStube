@@ -1,7 +1,6 @@
 package com.kzbs.kzbstube.ui
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -48,7 +47,7 @@ class DownloadsFragment : Fragment() {
         }
 
         binding.btnFilterAudios.setOnClickListener {
-            activeFilter = "MP3"
+            activeFilter = "AUDIO"
             binding.btnFilterAudios.setBackgroundResource(R.drawable.bg_red_button)
             binding.btnFilterVideos.setBackgroundResource(R.drawable.bg_search_box)
             updateUI()
@@ -63,7 +62,7 @@ class DownloadsFragment : Fragment() {
     private fun updateUI() {
         val all = DownloadManager.completedDownloads
         val videos = all.filter { it.format == "MP4" }
-        val audios = all.filter { it.format == "MP3" }
+        val audios = all.filter { it.format != "MP4" }
 
         binding.btnFilterVideos.text = "Videolar (${videos.size})"
         binding.btnFilterAudios.text = "Müzikler (${audios.size})"
@@ -75,15 +74,18 @@ class DownloadsFragment : Fragment() {
     }
 
     private fun openFile(path: String) {
-        val file = File(path)
-        if (file.exists()) {
-            val uri = FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.fileprovider", file)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, if (path.endsWith(".mp3")) "audio/*" else "video/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(intent)
+        val parsed = android.net.Uri.parse(path)
+        val uri = if (parsed.scheme == "content") parsed else {
+            val file = File(path)
+            if (!file.exists()) return
+            FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.fileprovider", file)
         }
+        val audio = path.endsWith(".mp3", true) || path.endsWith(".m4a", true)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, if (audio) "audio/*" else "video/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(intent)
     }
 
     override fun onDestroyView() {
@@ -106,7 +108,12 @@ class DownloadsAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = items[position]
-        holder.binding.tvDownloadTitle.text = if (item.format == "MP4") "${item.title}.mp4" else "${item.title}.mp3"
+        val extension = when (item.format.uppercase()) {
+            "M4A" -> "m4a"
+            "MP3" -> "mp3"
+            else -> "mp4"
+        }
+        holder.binding.tvDownloadTitle.text = "${item.title}.$extension"
         holder.binding.tvDownloadSize.text = "${String.format("%.1f", item.totalBytes / (1024.0 * 1024.0))} MB • ${item.quality}"
 
         if (item.format == "MP4") {

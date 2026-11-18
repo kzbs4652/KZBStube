@@ -15,7 +15,7 @@ class HomeFragment : Fragment() {
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
-    private var selectedMode = "MP4" // "MP4" or "MP3"
+    private var selectedMode = "MP4" // "MP4" or "M4A"
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -40,7 +40,7 @@ class HomeFragment : Fragment() {
         }
 
         binding.btnModeAudio.setOnClickListener {
-            selectedMode = "MP3"
+            selectedMode = "M4A"
             binding.btnModeAudio.setBackgroundResource(R.drawable.bg_red_button)
             binding.btnModeAudio.setTextColor(resources.getColor(R.color.text_primary, null))
             binding.btnModeVideo.setBackgroundResource(R.drawable.bg_search_box)
