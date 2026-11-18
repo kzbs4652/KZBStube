@@ -44,7 +44,7 @@ class MediaDownloadWorker(
 
             DownloadManager.performDownload(item, streamUrl) { current ->
                 val now = System.currentTimeMillis()
-                if (now - lastNotificationUpdate >= 900) {
+                if (current.isConverting || now - lastNotificationUpdate >= 900) {
                     lastNotificationUpdate = now
                     setProgress(
                         Data.Builder()
@@ -82,8 +82,8 @@ class MediaDownloadWorker(
         val manager = WorkManager.getInstance(applicationContext)
         val notification = NotificationCompat.Builder(applicationContext, KZBStubeApp.NOTIF_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_kzbs_logo)
-            .setContentTitle("İndiriliyor: ${item.title}")
-            .setContentText("${item.sizeFormatted} • ${item.speedFormatted}")
+            .setContentTitle(if (item.isConverting) "MP3 hazırlanıyor: ${item.title}" else "İndiriliyor: ${item.title}")
+            .setContentText(if (item.isConverting) "Ses dosyası MP3 biçimine çevriliyor" else "${item.sizeFormatted} • ${item.speedFormatted}")
             .setProgress(100, item.progressPercent, item.totalBytes <= 0L)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -103,6 +103,7 @@ class MediaDownloadWorker(
     }
 
     private fun shouldRetry(error: Throwable): Boolean = when (error) {
+        is Mp3ConversionException -> false
         is DownloadHttpException -> error.statusCode == 408 || error.statusCode == 429 || error.statusCode in 500..599
         is IOException -> true
         else -> false

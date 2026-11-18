@@ -90,7 +90,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_search_box"
-                android:text="🎵 Müzik (M4A)"
+                android:text="🎵 Müzik (MP3)"
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>

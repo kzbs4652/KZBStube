@@ -32,7 +32,11 @@ class ActiveDownloadsActivity : AppCompatActivity() {
                 if (current != null) {
                     binding.pbActive.progress = current.progressPercent
                     binding.tvActivePercent.text = "%${current.progressPercent}"
-                    binding.tvActiveMetrics.text = "${current.sizeFormatted} • ${current.speedFormatted}"
+                    binding.tvActiveMetrics.text = if (current.isConverting) {
+                        "Ses dosyası MP3 biçimine çevriliyor..."
+                    } else {
+                        "${current.sizeFormatted} • ${current.speedFormatted}"
+                    }
                     binding.btnPause.text = if (current.isPaused) "Devam Et" else "Duraklat"
                 } else {
                     finish()

@@ -11,8 +11,12 @@ android {
         applicationId = "com.kzbs.kzbstube"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 8
+        versionName = "1.0.7"
+
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86"))
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -58,6 +62,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("net.qiujuer.lame:lame:1.0.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.github.bumptech.glide:glide:4.16.0")
 }

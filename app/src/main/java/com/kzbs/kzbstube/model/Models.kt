@@ -11,7 +11,7 @@ data class VideoItem(
 )
 
 data class StreamOption(
-    val format: String, // MP4 or M4A
+    val format: String, // MP4, MP3 download, or M4A preview source
     val quality: String, // 720p, 360p, Audio HQ
     val sizeBytes: Long,
     val sizeFormatted: String,
@@ -24,14 +24,15 @@ data class DownloadItem(
     val title: String,
     val author: String,
     val thumbnailUrl: String,
-    val format: String, // MP4, M4A, or legacy MP3
+    val format: String, // MP4, MP3, or legacy M4A
     val quality: String,
     var filePath: String,
     var totalBytes: Long,
     var downloadedBytes: Long = 0,
     var speedBytesPerSec: Double = 0.0,
     var isCompleted: Boolean = false,
-    var isPaused: Boolean = false
+    var isPaused: Boolean = false,
+    var isConverting: Boolean = false
 ) {
     val progressPercent: Int
         get() = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt().coerceIn(0, 100) else 0

@@ -1,7 +1,7 @@
 {
-  "latestVersionCode": 7,
-  "latestVersionName": "1.0.6",
-  "changelog": "• Açılış beklemesi azaltıldı\n• İndirmeler kalıcı arka plan işlerine taşındı\n• Akış sunucuları paralel deneniyor ve dosya biçimleri doğrulanıyor\n• İndirme hataları daha anlaşılır gösteriliyor",
-  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.6.apk",
+  "latestVersionCode": 8,
+  "latestVersionName": "1.0.7",
+  "changelog": "• Ses indirmeleri gerçek MP3 dosyası olarak hazırlanıyor\n• MP4 ve MP3 seçenekleri geri getirildi\n• Arama ve önizlemede alternatif kaynak denemesi eklendi\n• İndirme ve dönüştürme durumu daha açık gösteriliyor",
+  "apkUrl": "https://raw.githubusercontent.com/kzbs4652/KZBStube/main/apk/KZBStube_v1.0.7.apk",
   "isMandatory": false
 }

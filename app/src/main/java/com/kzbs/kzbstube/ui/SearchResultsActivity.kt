@@ -49,7 +49,7 @@ class SearchResultsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySearchResultsBinding
     private val videoList = mutableListOf<VideoItem>()
     private lateinit var adapter: VideoAdapter
-    private var currentMode = "MP4" // "MP4" or "M4A"
+    private var currentMode = "MP4" // "MP4" or "MP3"
     private var mediaPlayer: MediaPlayer? = null
     private var isPlayingAudio = false
     private var activePreviewVideoId: String? = null
@@ -59,6 +59,7 @@ class SearchResultsActivity : AppCompatActivity() {
     private var previewResolveJob: Job? = null
     private var searchJob: Job? = null
     private var searchSequence = 0
+    private var previewRetryCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,22 +67,26 @@ class SearchResultsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         val query = intent.getStringExtra("QUERY") ?: "mavi espor"
-        currentMode = intent.getStringExtra("MODE")?.let { if (it == "MP3") "M4A" else it } ?: "MP4"
+        currentMode = intent.getStringExtra("MODE")?.let { if (it == "M4A") "MP3" else it } ?: "MP4"
 
         updateModeButtons()
 
         binding.etTopSearch.setText(query)
         binding.btnBack.setOnClickListener { finish() }
         binding.btnClear.setOnClickListener { binding.etTopSearch.setText("") }
+        binding.tvSearchMessage.setOnClickListener {
+            val retryQuery = binding.etTopSearch.text.toString().trim()
+            if (retryQuery.isNotEmpty()) performSearch(retryQuery)
+        }
 
-        // Mode toggling (MP4 / M4A)
+        // Mode toggling (MP4 / MP3)
         binding.btnResultModeVideo.setOnClickListener {
             currentMode = "MP4"
             updateModeButtons()
         }
 
         binding.btnResultModeAudio.setOnClickListener {
-            currentMode = "M4A"
+            currentMode = "MP3"
             updateModeButtons()
         }
 
@@ -118,6 +123,7 @@ class SearchResultsActivity : AppCompatActivity() {
         binding.btnMiniClose.setOnClickListener {
             previewResolveJob?.cancel()
             previewResolveJob = null
+            activePreviewVideoId = null
             stopAudio()
             binding.llMiniPlayer.visibility = View.GONE
             dismissPreviewNotification()
@@ -241,6 +247,8 @@ class SearchResultsActivity : AppCompatActivity() {
     private fun performSearch(query: String) {
         val requestSequence = ++searchSequence
         searchJob?.cancel()
+        videoList.clear()
+        adapter.notifyDataSetChanged()
         binding.tvSearchMessage.visibility = View.GONE
         binding.progressBar.visibility = View.VISIBLE
         searchJob = lifecycleScope.launch {
@@ -251,14 +259,14 @@ class SearchResultsActivity : AppCompatActivity() {
                 videoList.addAll(results)
                 adapter.notifyDataSetChanged()
                 if (results.isEmpty()) {
-                    binding.tvSearchMessage.text = "Sonuç bulunamadı. Arama kelimesini veya YouTube bağlantısını kontrol edin."
+                    binding.tvSearchMessage.text = "Sonuç bulunamadı. Yeniden denemek için buraya dokunun."
                     binding.tvSearchMessage.visibility = View.VISIBLE
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 if (requestSequence == searchSequence) {
-                    binding.tvSearchMessage.text = "Arama tamamlanamadı. Lütfen tekrar deneyin."
+                    binding.tvSearchMessage.text = "Arama kaynağı yanıt vermedi. Yeniden denemek için dokunun."
                     binding.tvSearchMessage.visibility = View.VISIBLE
                 }
             } finally {
@@ -277,6 +285,7 @@ class SearchResultsActivity : AppCompatActivity() {
     private fun playAudioInApp(video: VideoItem) {
         previewResolveJob?.cancel()
         previewResolveJob = null
+        previewRetryCount = 0
         stopAudio()
         activePreviewVideoId = video.id
         currentPlayingVideo = video
@@ -296,7 +305,7 @@ class SearchResultsActivity : AppCompatActivity() {
 
             // If already cached locally, play instantly (0ms)
             if (cacheFile.exists() && cacheFile.length() > 50000) {
-                playLocalAudio(cacheFile.absolutePath)
+                playLocalAudio(cacheFile.absolutePath, video.id)
                 return@launch
             }
 
@@ -307,14 +316,14 @@ class SearchResultsActivity : AppCompatActivity() {
 
             if (audioOpt != null && audioOpt.streamUrl.startsWith("http")) {
                 binding.tvMiniStatus.text = "Yükleniyor..."
-                playStreamDirect(audioOpt.streamUrl)
+                playStreamDirect(audioOpt.streamUrl, video, retryAttempt = 0)
             } else {
                 binding.tvMiniStatus.text = resolution.errorMessage ?: "Ses akışı bulunamadı"
             }
         }
     }
 
-    private fun playLocalAudio(filePath: String) {
+    private fun playLocalAudio(filePath: String, videoId: String) {
         try {
             stopAudio()
             mediaPlayer = MediaPlayer().apply {
@@ -325,13 +334,17 @@ class SearchResultsActivity : AppCompatActivity() {
                         .build()
                 )
                 setDataSource(filePath)
-                setOnPreparedListener {
-                    start()
+                setOnPreparedListener { preparedPlayer ->
+                    if (activePreviewVideoId != videoId) {
+                        preparedPlayer.release()
+                        return@setOnPreparedListener
+                    }
+                    preparedPlayer.start()
                     isPlayingAudio = true
                     binding.tvMiniStatus.text = "Çalıyor 🎵"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    binding.sbMiniProgress.max = duration
-                    binding.tvMiniTotalTime.text = formatTime(duration)
+                    binding.sbMiniProgress.max = preparedPlayer.duration
+                    binding.tvMiniTotalTime.text = formatTime(preparedPlayer.duration)
                     startProgressUpdater()
                     updatePreviewNotification()
                 }
@@ -354,7 +367,7 @@ class SearchResultsActivity : AppCompatActivity() {
         }
     }
 
-    private fun playStreamDirect(streamUrl: String) {
+    private fun playStreamDirect(streamUrl: String, video: VideoItem, retryAttempt: Int) {
         try {
             stopAudio()
             val headers = mapOf(
@@ -369,17 +382,22 @@ class SearchResultsActivity : AppCompatActivity() {
                         .build()
                 )
                 setDataSource(this@SearchResultsActivity, Uri.parse(streamUrl), headers)
-                setOnPreparedListener {
-                    start()
+                setOnPreparedListener { preparedPlayer ->
+                    if (activePreviewVideoId != video.id) {
+                        preparedPlayer.release()
+                        return@setOnPreparedListener
+                    }
+                    preparedPlayer.start()
                     isPlayingAudio = true
                     binding.tvMiniStatus.text = "Çalıyor 🎵"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    binding.sbMiniProgress.max = duration
-                    binding.tvMiniTotalTime.text = formatTime(duration)
+                    binding.sbMiniProgress.max = preparedPlayer.duration
+                    binding.tvMiniTotalTime.text = formatTime(preparedPlayer.duration)
                     startProgressUpdater()
                     updatePreviewNotification()
                 }
                 setOnInfoListener { _, what, _ ->
+                    if (activePreviewVideoId != video.id) return@setOnInfoListener false
                     when (what) {
                         MediaPlayer.MEDIA_INFO_BUFFERING_START -> binding.tvMiniStatus.text = "Yükleniyor..."
                         MediaPlayer.MEDIA_INFO_BUFFERING_END -> binding.tvMiniStatus.text = "Çalıyor 🎵"
@@ -388,15 +406,44 @@ class SearchResultsActivity : AppCompatActivity() {
                     true
                 }
                 setOnCompletionListener {
+                    if (activePreviewVideoId != video.id) return@setOnCompletionListener
                     binding.tvMiniStatus.text = "Tamamlandı"
                     binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
                     isPlayingAudio = false
                     updatePreviewNotification()
                 }
-                setOnErrorListener { _, _, _ ->
-                    binding.tvMiniStatus.text = "Ses oynatılamadı"
-                    binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                    isPlayingAudio = false
+                setOnErrorListener { failedPlayer, _, _ ->
+                    runCatching { failedPlayer.release() }
+                    if (mediaPlayer === failedPlayer) mediaPlayer = null
+                    if (activePreviewVideoId != video.id) return@setOnErrorListener true
+
+                    if (retryAttempt == 0 && previewRetryCount == 0) {
+                        previewRetryCount++
+                        binding.tvMiniStatus.text = "Alternatif ses kaynağı deneniyor..."
+                        previewResolveJob?.cancel()
+                        previewResolveJob = lifecycleScope.launch {
+                            val failedHost = runCatching { Uri.parse(streamUrl).host }.getOrNull()
+                            val refreshed = YouTubeHelper.resolveStreams(
+                                video.id,
+                                requiredFormat = "M4A",
+                                forceRefresh = true,
+                                skipInstanceHost = failedHost
+                            )
+                            if (activePreviewVideoId != video.id) return@launch
+                            val alternative = refreshed.options.firstOrNull { it.format == "M4A" }
+                            if (alternative?.streamUrl?.startsWith("http") == true) {
+                                playStreamDirect(alternative.streamUrl, video, retryAttempt = 1)
+                            } else {
+                                binding.tvMiniStatus.text = refreshed.errorMessage ?: "Ses şu anda açılamıyor"
+                                binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                                isPlayingAudio = false
+                            }
+                        }
+                    } else {
+                        binding.tvMiniStatus.text = "Ses oynatılamadı. Başka bir şarkı veya kaynak deneyin."
+                        binding.btnMiniPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                        isPlayingAudio = false
+                    }
                     true
                 }
                 prepareAsync()
@@ -532,9 +579,7 @@ class SearchResultsActivity : AppCompatActivity() {
                 )
                 if (!dialog.isShowing || isFinishing) return@launch
 
-                val filteredStreams = resolution.options.filter {
-                    if (currentMode == "M4A") it.format == "M4A" else it.format == "MP4"
-                }
+                val filteredStreams = resolution.options.filter { it.format == currentMode }
 
                 pbLoading.visibility = View.GONE
                 tvLabel.visibility = View.VISIBLE
@@ -559,7 +604,11 @@ class SearchResultsActivity : AppCompatActivity() {
                 filteredStreams.forEachIndexed { index, opt ->
                     val rb = RadioButton(this@SearchResultsActivity).apply {
                         id = index + 100
-                        text = "${opt.quality}  •  ${opt.sizeFormatted}"
+                        text = if (opt.format == "MP3") {
+                            "${opt.quality}  •  cihaza göre dönüştürülür"
+                        } else {
+                            "${opt.quality}  •  ${opt.sizeFormatted}"
+                        }
                         setTextColor(resources.getColor(R.color.text_primary, null))
                         textSize = 14f
                         isChecked = index == 0
@@ -599,6 +648,7 @@ class SearchResultsActivity : AppCompatActivity() {
         super.onDestroy()
         previewResolveJob?.cancel()
         searchJob?.cancel()
+        activePreviewVideoId = null
         stopAudio()
         dismissPreviewNotification()
         PreviewController.onPlayPause = null

@@ -7,10 +7,10 @@ set "ANDROID_HOME=C:\Android\sdk"
 call gradlew.bat assembleDebug
 if %ERRORLEVEL% EQU 0 (
     if not exist apk mkdir apk
-    copy /y app\build\outputs\apk\debug\app-debug.apk apk\KZBStube_v1.0.6.apk
+    copy /y app\build\outputs\apk\debug\app-debug.apk apk\KZBStube_v1.0.7.apk
     copy /y app\build\outputs\apk\debug\app-debug.apk apk\KZBStube.apk
     echo.
-    echo [BASARILI] Yeni APK dosyaniz olusturuldu: apk\KZBStube_v1.0.6.apk
+    echo [BASARILI] Yeni APK dosyaniz olusturuldu: apk\KZBStube_v1.0.7.apk
 ) else (
     echo.
     echo [HATA] Derleme sirasinda bir hata olustu.

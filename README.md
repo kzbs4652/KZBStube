@@ -1,8 +1,8 @@
 # KZBStube 🎬🎵
 > **YouTube Video ve Müzik İndirici (Android)**  
-> Sürüm: `v1.0.6`
+> Sürüm: `v1.0.7`
 
-KZBStube, YouTube üzerinden MP4 video ve M4A/AAC ses akışlarını indiren bir Android uygulamasıdır.
+KZBStube, YouTube üzerinden MP4 video indiren ve AAC ses akışlarını cihazda MP3'e dönüştürerek kaydeden bir Android uygulamasıdır.
 
 ---
 
@@ -26,12 +26,14 @@ Uygulamanın hazır kurulum APK'sı doğrudan **`apk/`** klasöründe yer almakt
   - Akıllı Pano (Clipboard) Algılama: YouTube'dan link kopyalandığında otomatik indirme önerisi.
 - **Gelişmiş İndirme Seçenekleri:**
   - **Video (MP4):** Yalnızca sesi içinde bulunan, video için kullanılabilir MP4 kaliteleri gösterilir.
-  - **Müzik (M4A/AAC):** Kaynağın özgün AAC ses akışı dönüştürülmeden kaydedilir.
+  - **Müzik (MP3):** AAC ses akışı cihazda 192 kb/s MP3'e dönüştürülür.
+  - **Önizleme:** Arama kaynağı aksarsa alternatif kaynak denenir; çalma hatasında başka sunucuya yeniden bağlanılır.
 - **Canlı İndirme Ekranı:**
   - Anlık ilerleme çubuğu (%)
   - Gerçek zamanlı indirme hızı (MB/s)
   - Duraklatma, devam ettirme ve iptal etme.
   - Android WorkManager ile uygulama arka plandayken sürdürülen indirme işleri ve otomatik geçici hata denemeleri.
+  - Arama, akış bulma ve doğrudan video bağlantıları için alternatif sunucu yolu.
 - **İndirilenler Yöneticisi:**
   - "Videolar" ve "Müzikler" kategorilendirilmiş sekmeler.
   - Dahili ve harici medya oynatıcılarla tek tıkla açma.

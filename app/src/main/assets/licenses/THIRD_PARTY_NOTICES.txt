@@ -1,0 +1,7 @@
+MP3 encoding
+-----------
+This application bundles net.qiujuer.lame:lame, an Android LAME encoder wrapper.
+The wrapper project is available at https://github.com/qiujuer/LameAndroid.
+The bundled LAME encoder is licensed under LGPL-2.1. A copy of the license is
+provided in this directory as LGPL-2.1.txt. The corresponding source is available
+from the upstream project linked above.

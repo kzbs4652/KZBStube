@@ -216,7 +216,14 @@ object DownloadManager {
         onWorkerProgress: suspend (DownloadItem) -> Unit
     ) {
         val targetFile = File(item.filePath)
-        val tempFile = File(targetFile.parentFile ?: KZBStubeApp.appContext.cacheDir, ".${item.id.hashCode()}.${extensionFor(item.format)}.part")
+        val workDirectory = targetFile.parentFile ?: KZBStubeApp.appContext.cacheDir
+        val sourceExtension = if (item.format.equals("MP3", ignoreCase = true)) "m4a" else extensionFor(item.format)
+        val tempFile = File(workDirectory, ".${item.id.hashCode()}.$sourceExtension.part")
+        val convertedFile = if (item.format.equals("MP3", ignoreCase = true)) {
+            File(workDirectory, ".${item.id.hashCode()}.mp3.part")
+        } else {
+            null
+        }
         val notifId = notificationId(item.id)
         val context = KZBStubeApp.appContext
         val notifManager = NotificationManagerCompat.from(context)
@@ -254,6 +261,7 @@ object DownloadManager {
         try {
             targetFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
             tempFile.delete()
+            convertedFile?.delete()
             val downloadedBytes = try {
                 downloadMedia(item, streamUrl, item.totalBytes, tempFile, ::resetProgress, ::reportProgress)
             } catch (error: DownloadHttpException) {
@@ -279,13 +287,35 @@ object DownloadManager {
             if (item.totalBytes <= 0L) item.totalBytes = downloadedBytes
             if (tempFile.length() != downloadedBytes) throw IOException("İndirilen dosyanın boyutu doğrulanamadı")
 
+            var fileToPublish = tempFile
+            var finalSizeBytes = downloadedBytes
+            if (convertedFile != null) {
+                item.isConverting = true
+                item.speedBytesPerSec = 0.0
+                withContext(Dispatchers.Main) { onProgressUpdate?.invoke() }
+                onWorkerProgress(item)
+                try {
+                    Mp3Transcoder.convert(tempFile, convertedFile)
+                } finally {
+                    item.isConverting = false
+                }
+                if (!convertedFile.isFile || convertedFile.length() <= 0L) {
+                    throw Mp3ConversionException("MP3 dosyası oluşturulamadı.")
+                }
+                fileToPublish = convertedFile
+                finalSizeBytes = convertedFile.length()
+            }
+
             val mime = mimeTypeFor(item.format)
             val cleanTitle = item.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { item.videoId }
-            item.filePath = publishDownloadedFile(tempFile, "$cleanTitle.${extensionFor(item.format)}", mime)
+            item.filePath = publishDownloadedFile(fileToPublish, "$cleanTitle.${extensionFor(item.format)}", mime)
             tempFile.delete()
+            convertedFile?.delete()
 
             item.isCompleted = true
-            item.downloadedBytes = downloadedBytes
+            item.totalBytes = finalSizeBytes
+            item.downloadedBytes = finalSizeBytes
+            item.isConverting = false
             item.speedBytesPerSec = 0.0
             activeDownloads.remove(item)
             completedDownloads.add(0, item)
@@ -321,6 +351,8 @@ object DownloadManager {
             }
         } catch (error: CancellationException) {
             tempFile.delete()
+            convertedFile?.delete()
+            item.isConverting = false
             activeDownloads.remove(item)
             clearPaused(item.id)
             try { notifManager.cancel(notifId) } catch (_: Exception) {}
@@ -328,6 +360,8 @@ object DownloadManager {
             throw error
         } catch (error: Exception) {
             tempFile.delete()
+            convertedFile?.delete()
+            item.isConverting = false
             throw error
         }
     }
